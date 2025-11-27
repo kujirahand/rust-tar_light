@@ -13,6 +13,8 @@
 //! 
 //! pack("archive.tar", &files);
 //! // Creates archive.tar containing file1.txt and file2.txt
+//! pack("archive.tar.gz", &files);
+//! // Creates archive.tar.gz that is gzip-compressed
 //! ```
 //!
 //! ## Unpacking files from a TAR archive
@@ -20,8 +22,10 @@
 //! ```rust
 //! use tar_light::unpack;
 //!
-//! unpack("archive.tar", "output_directory");
-//! // Extracts all files from archive.tar to output_directory/
+//! unpack("testdata/simple.tar", "output_directory");
+//! // Extracts all files from simple.tar to output_directory/
+//! unpack("testdata/simple.tar.gz", "output_directory");
+//! // Extracts all files from simple.tar.gz that is gzip-compressed
 //! ```
 //!
 //! ## Listing files in a TAR archive
@@ -69,14 +73,17 @@ pub mod tar;
 
 use std::fs;
 use std::path::Path;
-use std::io::Write;
+use std::io::{Write, Read};
+use flate2::read::GzDecoder;
+use flate2::write::GzEncoder;
+use flate2::Compression;
 
 pub use tar::{read_tar, write_tar, TarEntry, TarHeader};
 
 // ----------------------------------------------------------------
 // simple methods for reading and writing tar archives
 // ----------------------------------------------------------------
-/// Packs files into a tar archive
+/// Packs files into a tar archive (supports .tar and .tar.gz)
 pub fn pack(tarfile: &str, files: &[&String]) {
     let mut entries = Vec::new();
     
@@ -112,7 +119,21 @@ pub fn pack(tarfile: &str, files: &[&String]) {
     
     let tar_data = write_tar(&entries);
     
-    match fs::write(tarfile, &tar_data) {
+    // Check if output should be gzipped
+    let is_gzipped = tarfile.ends_with(".tar.gz") || tarfile.ends_with(".tgz");
+    
+    let result = if is_gzipped {
+        // Compress with gzip
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(&tar_data)
+            .and_then(|_| encoder.finish())
+            .and_then(|compressed| fs::write(tarfile, compressed))
+    } else {
+        // Write as plain tar
+        fs::write(tarfile, &tar_data)
+    };
+    
+    match result {
         Ok(_) => println!("Created tar archive: {}", tarfile),
         Err(e) => {
             eprintln!("Error writing tar file: {}", e);
@@ -121,14 +142,33 @@ pub fn pack(tarfile: &str, files: &[&String]) {
     }
 }
 
-/// Unpacks files from a tar archive
+/// Unpacks files from a tar archive (supports .tar and .tar.gz)
 pub fn unpack(tarfile: &str, output_dir: &str) {
-    let tar_data = match fs::read(tarfile) {
+    // Read file
+    let file_data = match fs::read(tarfile) {
         Ok(d) => d,
         Err(e) => {
             eprintln!("Error reading tar file: {}", e);
             std::process::exit(1);
         }
+    };
+    
+    // Check if input is gzipped
+    let is_gzipped = tarfile.ends_with(".tar.gz") || tarfile.ends_with(".tgz");
+    
+    let tar_data = if is_gzipped {
+        // Decompress with gzip
+        let mut decoder = GzDecoder::new(&file_data[..]);
+        let mut decompressed = Vec::new();
+        match decoder.read_to_end(&mut decompressed) {
+            Ok(_) => decompressed,
+            Err(e) => {
+                eprintln!("Error decompressing gzip: {}", e);
+                std::process::exit(1);
+            }
+        }
+    } else {
+        file_data
     };
     
     let entries = read_tar(&tar_data);
@@ -161,9 +201,23 @@ pub fn unpack(tarfile: &str, output_dir: &str) {
     println!("Extraction complete to: {}", output_dir);
 }
 
-/// Lists TarHeader in a tar archive
+/// Lists TarHeader in a tar archive (supports .tar and .tar.gz)
 pub fn list(tarfile: &str) -> Result<Vec<TarHeader>, std::io::Error> {
-    let tar_data = fs::read(tarfile)?;    
+    let file_data = fs::read(tarfile)?;
+    
+    // Check if input is gzipped
+    let is_gzipped = tarfile.ends_with(".tar.gz") || tarfile.ends_with(".tgz");
+    
+    let tar_data = if is_gzipped {
+        // Decompress with gzip
+        let mut decoder = GzDecoder::new(&file_data[..]);
+        let mut decompressed = Vec::new();
+        decoder.read_to_end(&mut decompressed)?;
+        decompressed
+    } else {
+        file_data
+    };
+    
     let entries = read_tar(&tar_data);
     let headers: Vec<TarHeader> = entries.into_iter().map(|e| e.header).collect();
     Ok(headers)
@@ -278,5 +332,55 @@ mod tests {
         fs::remove_file(test_file1).unwrap();
         fs::remove_file(test_file2).unwrap();
         fs::remove_file(test_tar).unwrap();
+    }
+
+    #[test]
+    fn test_tar_gz() {
+        // テスト用のファイルを作成
+        let test_file1 = "test_gz_file1.txt";
+        let test_file2 = "test_gz_file2.txt";
+        let test_tar_gz = "test_pack.tar.gz";
+        let output_dir = "test_gz_output";
+        
+        fs::write(test_file1, "GZ test content 1").unwrap();
+        fs::write(test_file2, "GZ test content 2 longer").unwrap();
+        
+        // pack関数を実行（.tar.gz形式）
+        let file1 = test_file1.to_string();
+        let file2 = test_file2.to_string();
+        let files = vec![&file1, &file2];
+        pack(test_tar_gz, &files);
+        
+        // .tar.gzファイルが作成されたことを確認
+        assert!(Path::new(test_tar_gz).exists());
+        
+        // list関数でファイル一覧を取得（.tar.gzから）
+        let headers = list(test_tar_gz).unwrap();
+        assert_eq!(headers.len(), 2);
+        assert_eq!(headers[0].name, test_file1);
+        assert_eq!(headers[0].size, 17);
+        assert_eq!(headers[1].name, test_file2);
+        assert_eq!(headers[1].size, 24);
+        
+        // unpack関数を実行（.tar.gzから展開）
+        unpack(test_tar_gz, output_dir);
+        
+        // ファイルが展開されたことを確認
+        let extracted_file1 = Path::new(output_dir).join(test_file1);
+        let extracted_file2 = Path::new(output_dir).join(test_file2);
+        assert!(extracted_file1.exists());
+        assert!(extracted_file2.exists());
+        
+        // ファイル内容を確認
+        let content1 = fs::read_to_string(&extracted_file1).unwrap();
+        let content2 = fs::read_to_string(&extracted_file2).unwrap();
+        assert_eq!(content1, "GZ test content 1");
+        assert_eq!(content2, "GZ test content 2 longer");
+        
+        // クリーンアップ
+        fs::remove_file(test_file1).unwrap();
+        fs::remove_file(test_file2).unwrap();
+        fs::remove_file(test_tar_gz).unwrap();
+        fs::remove_dir_all(output_dir).unwrap();
     }
 }

@@ -1,13 +1,14 @@
 [package]
 name = "tar_light"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 authors = ["kujirahand"]
 description = "Simple tar archive reader and writer library"
 license = "MIT"
 repository = "https://github.com/kujirahand/rust-tar_light"
 readme = "README.md"
-keywords = ["tar", "archive"]
-categories = ["filesystem"]
+keywords = ["tar", "archive", "compression", "gzip"]
+categories = ["filesystem", "compression"]
 
 [dependencies]
+flate2 = "1.0"

@@ -1,15 +1,32 @@
 # tar_light for Rust
 
-A simple tar archive reader and writer library in Rust.
-Only packs and unpacks basic tar files without compression.
+A simple and lightweight tar archive reader and writer library in Rust.
+
+## Features
+
+- 📦 Pack and unpack TAR archives (`.tar`)
+- 🗜️ Support for gzip compression (`.tar.gz`, `.tgz`)
+- 📋 List files in archives
+- 🚀 Simple and intuitive API
+- 🔧 Command-line tool included
+- ⚡ No external dependencies except `flate2` for gzip support
 
 ## Installation
+
+Add to your `Cargo.toml`:
+
+```toml
+[dependencies]
+tar_light = "0.1"
+```
+
+Or use cargo:
 
 ```sh
 cargo add tar_light
 ```
 
-## Sample Usage
+## Usage
 
 ### Packing files into a TAR archive
 
@@ -20,8 +37,11 @@ let file1 = "file1.txt".to_string();
 let file2 = "file2.txt".to_string();
 let files = vec![&file1, &file2];
 
+// Create plain TAR archive
 pack("archive.tar", &files);
-// Creates archive.tar containing file1.txt and file2.txt
+
+// Create gzip-compressed TAR archive
+pack("archive.tar.gz", &files);
 ```
 
 ### Unpacking files from a TAR archive
@@ -29,8 +49,11 @@ pack("archive.tar", &files);
 ```rust
 use tar_light::unpack;
 
+// Extract plain TAR archive
 unpack("archive.tar", "output_directory");
-// Extracts all files from archive.tar to output_directory/
+
+// Extract gzip-compressed TAR archive
+unpack("archive.tar.gz", "output_directory");
 ```
 
 ### Listing files in a TAR archive
@@ -38,7 +61,8 @@ unpack("archive.tar", "output_directory");
 ```rust
 use tar_light::list;
 
-match list("archive.tar") {
+// Works with both .tar and .tar.gz
+match list("archive.tar.gz") {
     Ok(headers) => {
         println!("Files in archive:");
         for header in headers {
@@ -49,16 +73,64 @@ match list("archive.tar") {
 }
 ```
 
-### Command line tool
+### Advanced usage with low-level API
+
+```rust
+use tar_light::{read_tar, write_tar, TarEntry, TarHeader};
+use std::fs;
+
+// Reading TAR archives
+let tar_data = fs::read("archive.tar").unwrap();
+let entries = read_tar(&tar_data);
+
+for entry in entries {
+    println!("{}: {} bytes", entry.header.name, entry.header.size);
+}
+
+// Creating TAR archives
+let mut entries = Vec::new();
+let header = TarHeader::new("hello.txt".to_string(), 0o644, 12);
+let data = b"Hello, World".to_vec();
+let header_bytes = header.to_bytes();
+
+entries.push(TarEntry { header, data, header_bytes });
+let tar_data = write_tar(&entries);
+fs::write("new_archive.tar", tar_data).unwrap();
+```
+
+## Command Line Tool
+
+The library includes a command-line tool for basic tar operations:
 
 ```bash
-# Pack files
+# Pack files into TAR archive
 cargo run -- pack archive.tar file1.txt file2.txt
+
+# Pack files into gzip-compressed TAR archive
+cargo run -- pack archive.tar.gz file1.txt file2.txt
 
 # Unpack archive
 cargo run -- unpack archive.tar output_dir
 
+# Unpack gzip-compressed archive
+cargo run -- unpack archive.tar.gz output_dir
+
 # List files in archive
-cargo run -- list archive.tar
+cargo run -- list archive.tar.gz
 ```
 
+## Supported Formats
+
+- `.tar` - Plain TAR archives
+- `.tar.gz` - Gzip-compressed TAR archives
+- `.tgz` - Gzip-compressed TAR archives (alternative extension)
+
+The format is automatically detected based on the file extension.
+
+## License
+
+MIT
+
+## Repository
+
+[https://github.com/kujirahand/rust-tar_light](https://github.com/kujirahand/rust-tar_light)
