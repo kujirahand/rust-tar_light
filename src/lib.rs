@@ -26,7 +26,7 @@
 //! // Extracts all files from simple.tar.gz that is gzip-compressed
 //! ```
 //!
-//! ## Listing files in a TAR archive
+//! ## Listing files in a TAR archive header
 //!
 //! ```rust
 //! use tar_light::list;
@@ -36,6 +36,22 @@
 //!         println!("Files in archive:");
 //!         for header in headers {
 //!             println!("  {} ({} bytes)", header.name, header.size);
+//!         }
+//!     }
+//!     Err(e) => eprintln!("Error: {}", e),
+//! }
+//! ```
+//!
+//! ## Listing files in a TAR entry
+//!
+//! ```rust
+//! use tar_light::list_entry;
+//!
+//! match list_entry("archive.tar") {
+//!     Ok(entries) => {
+//!         println!("Files in archive:");
+//!         for entry in entries {
+//!             println!("  {} ({} bytes)", entry.header.name, entry.header.size);
 //!         }
 //!     }
 //!     Err(e) => eprintln!("Error: {}", e),

@@ -55,6 +55,51 @@ fn main() {
                 }
             }
         }
+        "list_detail" => {
+            if args.len() < 3 {
+                eprintln!("Error: list_detail requires tarfile");
+                print_usage();
+                std::process::exit(1);
+            }
+            let tarfile = &args[2];
+            match list(tarfile) {
+                Ok(headers) => {
+                    println!("Files in {}:", tarfile);
+                    println!("{}", "=".repeat(80));
+                    for (i, header) in headers.iter().enumerate() {
+                        println!("File #{}", i + 1);
+                        println!("  Name:        {}", header.name);
+                        println!("  Size:        {} bytes", header.size);
+                        println!("  Mode:        {:o} (octal)", header.mode);
+                        println!("  UID:         {}", header.uid);
+                        println!("  GID:         {}", header.gid);
+                        println!("  User:        {}", if header.uname.is_empty() { "(none)" } else { &header.uname });
+                        println!("  Group:       {}", if header.gname.is_empty() { "(none)" } else { &header.gname });
+                        println!("  Timestamp:   {} (unix time)", header.mtime);
+                        println!("  Checksum:    {}", header.checksum);
+                        println!("  Type:        {}", match header.typeflag {
+                            b'0' | 0 => "Regular file",
+                            b'1' => "Hard link",
+                            b'2' => "Symbolic link",
+                            b'3' => "Character device",
+                            b'4' => "Block device",
+                            b'5' => "Directory",
+                            b'6' => "FIFO",
+                            _ => "Unknown",
+                        });
+                        if !header.linkname.is_empty() {
+                            println!("  Link name:   {}", header.linkname);
+                        }
+                        println!("{}", "-".repeat(80));
+                    }
+                    println!("\nTotal: {} file(s)", headers.len());
+                }
+                Err(e) => {
+                    eprintln!("Error: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
         _ => {
             eprintln!("Error: Unknown command '{}'", command);
             print_usage();
@@ -68,6 +113,7 @@ fn print_usage() {
     eprintln!("  pack <tarfile> <file1> <file2> ... - Create tar archive");
     eprintln!("  unpack <tarfile> <directory>      - Extract tar archive");
     eprintln!("  list <tarfile>                     - List files in tar archive");
+    eprintln!("  list_detail <tarfile>              - List files with detailed information");
 }
 
 #[cfg(test)]

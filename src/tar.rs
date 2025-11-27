@@ -90,8 +90,8 @@ impl TarHeader {
             name,
             mode,
             size,
-            uid: 0,
-            gid: 0,
+            uid: 501,
+            gid: 20,
             mtime: 0,
             checksum: 0,
             typeflag: b'0', // Regular file
