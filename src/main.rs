@@ -19,7 +19,7 @@ fn main() {
                 std::process::exit(1);
             }
             let tarfile = &args[2];
-            let files: Vec<&String> = args[3..].iter().collect();
+            let files: Vec<&str> = args[3..].iter().map(|s| s.as_str()).collect();
             pack(tarfile, &files);
         }
         "unpack" => {
@@ -78,7 +78,7 @@ mod tests {
 
     #[test]
     fn test_pack_command() {
-        // テスト用ファイルを作成
+        // Create test files
         let test_file1 = "test_main_file1.txt";
         let test_file2 = "test_main_file2.txt";
         let test_tar = "test_main_pack.tar";
@@ -86,16 +86,14 @@ mod tests {
         fs::write(test_file1, "Test content 1").unwrap();
         fs::write(test_file2, "Test content 2").unwrap();
         
-        // pack関数を実行
-        let file1 = test_file1.to_string();
-        let file2 = test_file2.to_string();
-        let files = vec![&file1, &file2];
+        // Execute pack function
+        let files = vec![test_file1, test_file2];
         pack(test_tar, &files);
         
-        // tarファイルが作成されたことを確認
+        // Verify tar file was created
         assert!(Path::new(test_tar).exists());
         
-        // クリーンアップ
+        // Cleanup
         fs::remove_file(test_file1).unwrap();
         fs::remove_file(test_file2).unwrap();
         fs::remove_file(test_tar).unwrap();
@@ -103,7 +101,7 @@ mod tests {
 
     #[test]
     fn test_unpack_command() {
-        // テスト用ファイルとtarアーカイブを作成
+        // Create test file and tar archive
         let test_file = "test_main_unpack_file.txt";
         let test_content = "Main unpack test";
         let test_tar = "test_main_unpack.tar";
@@ -111,23 +109,22 @@ mod tests {
         
         fs::write(test_file, test_content).unwrap();
         
-        // tarアーカイブを作成
-        let file = test_file.to_string();
-        let files = vec![&file];
+        // Create tar archive
+        let files = vec![test_file];
         pack(test_tar, &files);
         
-        // unpack関数を実行
+        // Execute unpack function
         unpack(test_tar, output_dir);
         
-        // ファイルが展開されたことを確認
+        // Verify file was extracted
         let extracted_file = Path::new(output_dir).join(test_file);
         assert!(extracted_file.exists());
         
-        // ファイル内容を確認
+        // Verify file content
         let content = fs::read_to_string(&extracted_file).unwrap();
         assert_eq!(content, test_content);
         
-        // クリーンアップ
+        // Cleanup
         fs::remove_file(test_file).unwrap();
         fs::remove_file(test_tar).unwrap();
         fs::remove_dir_all(output_dir).unwrap();
@@ -135,7 +132,7 @@ mod tests {
 
     #[test]
     fn test_list_command() {
-        // テスト用ファイルとtarアーカイブを作成
+        // Create test files and tar archive
         let test_file1 = "test_main_list_file1.txt";
         let test_file2 = "test_main_list_file2.txt";
         let test_tar = "test_main_list.tar";
@@ -143,25 +140,39 @@ mod tests {
         fs::write(test_file1, "List test 1").unwrap();
         fs::write(test_file2, "List test 2").unwrap();
         
-        // tarアーカイブを作成
-        let file1 = test_file1.to_string();
-        let file2 = test_file2.to_string();
-        let files = vec![&file1, &file2];
+        // Create tar archive
+        let files = vec![test_file1, test_file2];
         pack(test_tar, &files);
         
-        // list関数を実行
+        // Execute list function
         let headers = list(test_tar).unwrap();
         
-        // 結果を確認
+        // Verify results
         assert_eq!(headers.len(), 2);
         assert_eq!(headers[0].name, test_file1);
         assert_eq!(headers[0].size, 11);
         assert_eq!(headers[1].name, test_file2);
         assert_eq!(headers[1].size, 11);
         
-        // クリーンアップ
+        // Cleanup
         fs::remove_file(test_file1).unwrap();
         fs::remove_file(test_file2).unwrap();
         fs::remove_file(test_tar).unwrap();
     }
+
+    #[test]
+    fn test_simple() {
+        let files = vec![
+            "src/main.rs",
+            "src/lib.rs",
+            "src/tar.rs",
+            "Cargo.toml",
+        ];
+        pack("a.tar.gz", &files);
+        let headers = list("a.tar.gz").unwrap();
+        assert!(headers.len() == 4);
+        // cleanup
+        fs::remove_file("a.tar.gz").unwrap();
+    }
+
 }

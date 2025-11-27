@@ -33,11 +33,8 @@ cargo add tar_light
 ```rust
 use tar_light::pack;
 
-let file1 = "file1.txt".to_string();
-let file2 = "file2.txt".to_string();
-let files = vec![&file1, &file2];
-
 // Create plain TAR archive
+let files = vec!["file1.txt",　"file2.txt"];
 pack("archive.tar", &files);
 
 // Create gzip-compressed TAR archive

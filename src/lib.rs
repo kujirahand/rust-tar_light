@@ -7,9 +7,7 @@
 //! ```rust
 //! use tar_light::pack;
 //!
-//! let file1 = "file1.txt".to_string();
-//! let file2 = "file2.txt".to_string();
-//! let files = vec![&file1, &file2];
+//! let files = vec!["file1.txt", "file2.txt"];
 //! 
 //! pack("archive.tar", &files);
 //! // Creates archive.tar containing file1.txt and file2.txt
@@ -144,7 +142,7 @@ fn collect_files_from_dir(dir_path: &Path, base_path: &Path, entries: &mut Vec<T
 // simple methods for reading and writing tar archives
 // ----------------------------------------------------------------
 /// Packs files into a tar archive (supports .tar and .tar.gz)
-pub fn pack(tarfile: &str, files: &[&String]) {
+pub fn pack(tarfile: &str, files: &[&str]) {
     let mut entries = Vec::new();
     
     for file_path in files {
@@ -289,7 +287,7 @@ mod tests {
 
     #[test]
     fn test_pack() {
-        // テスト用のファイルを作成
+        // Create test files
         let test_file1 = "test_file1.txt";
         let test_file2 = "test_file2.txt";
         let test_tar = "test_pack.tar";
@@ -297,23 +295,21 @@ mod tests {
         fs::write(test_file1, "Hello, World!").unwrap();
         fs::write(test_file2, "Test content 2").unwrap();
         
-        // pack関数を実行
-        let file1 = test_file1.to_string();
-        let file2 = test_file2.to_string();
-        let files = vec![&file1, &file2];
+        // Execute pack function
+        let files = vec![test_file1, test_file2];
         pack(test_tar, &files);
         
-        // tarファイルが作成されたことを確認
+        // Verify tar file was created
         assert!(Path::new(test_tar).exists());
         
-        // tarファイルの内容を確認
+        // Verify tar file contents
         let tar_data = fs::read(test_tar).unwrap();
         let entries = read_tar(&tar_data);
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].header.name, test_file1);
         assert_eq!(entries[1].header.name, test_file2);
         
-        // クリーンアップ
+        // Cleanup
         fs::remove_file(test_file1).unwrap();
         fs::remove_file(test_file2).unwrap();
         fs::remove_file(test_tar).unwrap();
@@ -321,7 +317,7 @@ mod tests {
 
     #[test]
     fn test_unpack() {
-        // テスト用のファイルとtarアーカイブを作成
+        // Create test file and tar archive
         let test_file = "test_unpack_file.txt";
         let test_content = "Unpack test content";
         let test_tar = "test_unpack.tar";
@@ -329,23 +325,22 @@ mod tests {
         
         fs::write(test_file, test_content).unwrap();
         
-        // tarアーカイブを作成
-        let file = test_file.to_string();
-        let files = vec![&file];
+        // Create tar archive
+        let files = vec![test_file];
         pack(test_tar, &files);
         
-        // unpack関数を実行
+        // Execute unpack function
         unpack(test_tar, output_dir);
         
-        // ファイルが展開されたことを確認
+        // Verify file was extracted
         let extracted_file = Path::new(output_dir).join(test_file);
         assert!(extracted_file.exists());
         
-        // ファイル内容を確認
+        // Verify file content
         let content = fs::read_to_string(&extracted_file).unwrap();
         assert_eq!(content, test_content);
         
-        // クリーンアップ
+        // Cleanup
         fs::remove_file(test_file).unwrap();
         fs::remove_file(test_tar).unwrap();
         fs::remove_dir_all(output_dir).unwrap();
@@ -353,7 +348,7 @@ mod tests {
 
     #[test]
     fn test_list() {
-        // テスト用のファイルとtarアーカイブを作成
+        // Create test files and tar archive
         let test_file1 = "test_list_file1.txt";
         let test_file2 = "test_list_file2.txt";
         let test_tar = "test_list.tar";
@@ -361,23 +356,21 @@ mod tests {
         fs::write(test_file1, "Content 1").unwrap();
         fs::write(test_file2, "Content 2 longer").unwrap();
         
-        // tarアーカイブを作成
-        let file1 = test_file1.to_string();
-        let file2 = test_file2.to_string();
-        let files = vec![&file1, &file2];
+        // Create tar archive
+        let files = vec![test_file1, test_file2];
         pack(test_tar, &files);
         
-        // list関数を実行
+        // Execute list function
         let headers = list(test_tar).unwrap();
         
-        // 結果を確認
+        // Verify results
         assert_eq!(headers.len(), 2);
         assert_eq!(headers[0].name, test_file1);
         assert_eq!(headers[0].size, 9);
         assert_eq!(headers[1].name, test_file2);
         assert_eq!(headers[1].size, 16);
         
-        // tarファイルの内容を直接確認
+        // Verify tar file contents directly
         let tar_data = fs::read(test_tar).unwrap();
         let entries = read_tar(&tar_data);
         assert_eq!(entries.len(), 2);
@@ -386,7 +379,7 @@ mod tests {
         assert_eq!(entries[1].header.name, test_file2);
         assert_eq!(entries[1].header.size, 16);
         
-        // クリーンアップ
+        // Cleanup
         fs::remove_file(test_file1).unwrap();
         fs::remove_file(test_file2).unwrap();
         fs::remove_file(test_tar).unwrap();
@@ -394,7 +387,7 @@ mod tests {
 
     #[test]
     fn test_tar_gz() {
-        // テスト用のファイルを作成
+        // Create test files
         let test_file1 = "test_gz_file1.txt";
         let test_file2 = "test_gz_file2.txt";
         let test_tar_gz = "test_pack.tar.gz";
@@ -403,16 +396,14 @@ mod tests {
         fs::write(test_file1, "GZ test content 1").unwrap();
         fs::write(test_file2, "GZ test content 2 longer").unwrap();
         
-        // pack関数を実行（.tar.gz形式）
-        let file1 = test_file1.to_string();
-        let file2 = test_file2.to_string();
-        let files = vec![&file1, &file2];
+        // Execute pack function (.tar.gz format)
+        let files = vec![test_file1, test_file2];
         pack(test_tar_gz, &files);
         
-        // .tar.gzファイルが作成されたことを確認
+        // Verify .tar.gz file was created
         assert!(Path::new(test_tar_gz).exists());
         
-        // list関数でファイル一覧を取得（.tar.gzから）
+        // Get file list with list function (from .tar.gz)
         let headers = list(test_tar_gz).unwrap();
         assert_eq!(headers.len(), 2);
         assert_eq!(headers[0].name, test_file1);
@@ -420,22 +411,22 @@ mod tests {
         assert_eq!(headers[1].name, test_file2);
         assert_eq!(headers[1].size, 24);
         
-        // unpack関数を実行（.tar.gzから展開）
+        // Execute unpack function (extract from .tar.gz)
         unpack(test_tar_gz, output_dir);
         
-        // ファイルが展開されたことを確認
+        // Verify files were extracted
         let extracted_file1 = Path::new(output_dir).join(test_file1);
         let extracted_file2 = Path::new(output_dir).join(test_file2);
         assert!(extracted_file1.exists());
         assert!(extracted_file2.exists());
         
-        // ファイル内容を確認
+        // Verify file contents
         let content1 = fs::read_to_string(&extracted_file1).unwrap();
         let content2 = fs::read_to_string(&extracted_file2).unwrap();
         assert_eq!(content1, "GZ test content 1");
         assert_eq!(content2, "GZ test content 2 longer");
         
-        // クリーンアップ
+        // Cleanup
         fs::remove_file(test_file1).unwrap();
         fs::remove_file(test_file2).unwrap();
         fs::remove_file(test_tar_gz).unwrap();
@@ -444,7 +435,7 @@ mod tests {
 
     #[test]
     fn test_pack_directory() {
-        // テスト用のディレクトリ構造を作成
+        // Create test directory structure
         let test_dir = "test_pack_dir";
         let test_tar = "test_pack_dir.tar";
         
@@ -453,33 +444,32 @@ mod tests {
         fs::write(format!("{}/file2.txt", test_dir), "File 2 content").unwrap();
         fs::write(format!("{}/subdir/file3.txt", test_dir), "File 3 in subdir").unwrap();
         
-        // ディレクトリをpack
-        let dir = test_dir.to_string();
-        let files = vec![&dir];
+        // Pack directory
+        let files = vec![test_dir];
         pack(test_tar, &files);
         
-        // tarファイルが作成されたことを確認
+        // Verify tar file was created
         assert!(Path::new(test_tar).exists());
         
-        // tarファイルの内容を確認
+        // Verify tar file contents
         let tar_data = fs::read(test_tar).unwrap();
         let entries = read_tar(&tar_data);
         assert_eq!(entries.len(), 3);
         
-        // ファイル名を確認（相対パスで格納されているはず）
+        // Verify file names (should be stored as relative paths)
         let names: Vec<String> = entries.iter().map(|e| e.header.name.clone()).collect();
         assert!(names.contains(&"file1.txt".to_string()));
         assert!(names.contains(&"file2.txt".to_string()));
         assert!(names.contains(&"subdir/file3.txt".to_string()));
         
-        // クリーンアップ
+        // Cleanup
         fs::remove_dir_all(test_dir).unwrap();
         fs::remove_file(test_tar).unwrap();
     }
 
     #[test]
     fn test_pack_and_unpack_directory() {
-        // テスト用のディレクトリ構造を作成
+        // Create test directory structure
         let test_dir = "test_dir_full";
         let test_tar = "test_dir_full.tar";
         let output_dir = "test_dir_full_output";
@@ -490,25 +480,24 @@ mod tests {
         fs::write(format!("{}/a/b/file_b.txt", test_dir), "File in b").unwrap();
         fs::write(format!("{}/a/b/c/file_c.txt", test_dir), "File in c").unwrap();
         
-        // ディレクトリをpack
-        let dir = test_dir.to_string();
-        let files = vec![&dir];
+        // Pack directory
+        let files = vec![test_dir];
         pack(test_tar, &files);
         
         // unpack
         unpack(test_tar, output_dir);
         
-        // すべてのファイルが展開されたことを確認
+        // Verify all files were extracted
         assert!(Path::new(output_dir).join("root.txt").exists());
         assert!(Path::new(output_dir).join("a/file_a.txt").exists());
         assert!(Path::new(output_dir).join("a/b/file_b.txt").exists());
         assert!(Path::new(output_dir).join("a/b/c/file_c.txt").exists());
         
-        // ファイル内容を確認
+        // Verify file content
         let content = fs::read_to_string(Path::new(output_dir).join("a/b/c/file_c.txt")).unwrap();
         assert_eq!(content, "File in c");
         
-        // クリーンアップ
+        // Cleanup
         fs::remove_dir_all(test_dir).unwrap();
         fs::remove_file(test_tar).unwrap();
         fs::remove_dir_all(output_dir).unwrap();
@@ -516,7 +505,7 @@ mod tests {
 
     #[test]
     fn test_pack_mixed_files_and_directories() {
-        // テスト用のファイルとディレクトリを作成
+        // Create test file and directory
         let test_file = "test_mixed_file.txt";
         let test_dir = "test_mixed_dir";
         let test_tar = "test_mixed.tar";
@@ -526,24 +515,22 @@ mod tests {
         fs::write(format!("{}/dir_file.txt", test_dir), "File in dir").unwrap();
         fs::write(format!("{}/subdir/sub_file.txt", test_dir), "File in subdir").unwrap();
         
-        // ファイルとディレクトリを混在させてpack
-        let file = test_file.to_string();
-        let dir = test_dir.to_string();
-        let files = vec![&file, &dir];
+        // Pack mixed files and directories
+        let files = vec![test_file, test_dir];
         pack(test_tar, &files);
         
-        // tarファイルの内容を確認
+        // Verify tar file contents
         let tar_data = fs::read(test_tar).unwrap();
         let entries = read_tar(&tar_data);
         assert_eq!(entries.len(), 3);
         
-        // ファイル名を確認
+        // Verify file names
         let names: Vec<String> = entries.iter().map(|e| e.header.name.clone()).collect();
         assert!(names.contains(&test_file.to_string()));
         assert!(names.contains(&"dir_file.txt".to_string()));
         assert!(names.contains(&"subdir/sub_file.txt".to_string()));
         
-        // クリーンアップ
+        // Cleanup
         fs::remove_file(test_file).unwrap();
         fs::remove_dir_all(test_dir).unwrap();
         fs::remove_file(test_tar).unwrap();
@@ -551,7 +538,7 @@ mod tests {
 
     #[test]
     fn test_pack_directory_gzipped() {
-        // テスト用のディレクトリ構造を作成
+        // Create test directory structure
         let test_dir = "test_pack_dir_gz";
         let test_tar_gz = "test_pack_dir.tar.gz";
         let output_dir = "test_pack_dir_gz_output";
@@ -561,29 +548,28 @@ mod tests {
         fs::write(format!("{}/nested/file2.txt", test_dir), "Second file").unwrap();
         fs::write(format!("{}/nested/deep/file3.txt", test_dir), "Third file").unwrap();
         
-        // ディレクトリをpack（gzip圧縮）
-        let dir = test_dir.to_string();
-        let files = vec![&dir];
+        // Pack directory (gzip compressed)
+        let files = vec![test_dir];
         pack(test_tar_gz, &files);
         
-        // .tar.gzファイルが作成されたことを確認
+        // Verify .tar.gz file was created
         assert!(Path::new(test_tar_gz).exists());
         
-        // listで内容を確認
+        // Verify contents with list
         let headers = list(test_tar_gz).unwrap();
         assert_eq!(headers.len(), 3);
         
-        // unpackして確認
+        // Verify by unpacking
         unpack(test_tar_gz, output_dir);
         assert!(Path::new(output_dir).join("file1.txt").exists());
         assert!(Path::new(output_dir).join("nested/file2.txt").exists());
         assert!(Path::new(output_dir).join("nested/deep/file3.txt").exists());
         
-        // ファイル内容を確認
+        // Verify file content
         let content = fs::read_to_string(Path::new(output_dir).join("nested/deep/file3.txt")).unwrap();
         assert_eq!(content, "Third file");
         
-        // クリーンアップ
+        // Cleanup
         fs::remove_dir_all(test_dir).unwrap();
         fs::remove_file(test_tar_gz).unwrap();
         fs::remove_dir_all(output_dir).unwrap();

@@ -9,6 +9,11 @@ repository = "https://github.com/kujirahand/rust-tar_light"
 readme = "README.md"
 keywords = ["tar", "archive", "compression", "gzip"]
 categories = ["filesystem", "compression"]
+documentation = "https://docs.rs/tar_light"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
 flate2 = "1.0"
