@@ -124,11 +124,46 @@ cargo run -- list archive.tar.gz
 
 The format is automatically detected based on the file extension.
 
+## Easy Building with just
+
+This project uses [just](https://github.com/casey/just) as a task runner, making it easy to build and test the project with simple commands. A `justfile` is provided for common tasks:
+
+```sh
+# Build the project
+just build
+
+# Build in release mode
+just build-release
+
+# Pack files into TAR archive
+just pack archive.tar file1.txt file2.txt
+
+# Unpack TAR archive
+just unpack archive.tar output_dir
+
+# List files in archive
+just list archive.tar
+
+# Clean up generated files
+just clean
+```
+
+If you don't have `just` installed, you can install it with:
+
+```sh
+# macOS
+brew install just
+
+# Other platforms
+cargo install just
+```
+
 ## License
 
 MIT
 
 ## Repository
 
-- [https://github.com/kujirahand/rust-tar_light](https://github.com/kujirahand/rust-tar_light)
+- [github.com/kujirahand/rust-tar_light](https://github.com/kujirahand/rust-tar_light)
 - [crates.io/crates/tar_light](https://crates.io/crates/tar_light)
+- [docs.rs/tar_light](https://docs.rs/tar_light)
