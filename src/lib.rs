@@ -30,10 +30,10 @@
 //! use tar_light::list;
 //!
 //! match list("archive.tar") {
-//!     Ok(filenames) => {
+//!     Ok(headers) => {
 //!         println!("Files in archive:");
-//!         for name in filenames {
-//!             println!("  {}", name);
+//!         for header in headers {
+//!             println!("  {} ({} bytes)", header.name, header.size);
 //!         }
 //!     }
 //!     Err(e) => eprintln!("Error: {}", e),
@@ -161,25 +161,12 @@ pub fn unpack(tarfile: &str, output_dir: &str) {
     println!("Extraction complete to: {}", output_dir);
 }
 
-/// Lists files in a tar archive
-pub fn list(tarfile: &str) -> Result<Vec<String>, std::io::Error> {
-    let tar_data = fs::read(tarfile)?;
-    
+/// Lists TarHeader in a tar archive
+pub fn list(tarfile: &str) -> Result<Vec<TarHeader>, std::io::Error> {
+    let tar_data = fs::read(tarfile)?;    
     let entries = read_tar(&tar_data);
-    
-    println!("Files in {}:", tarfile);
-    println!("{:>10}  {}", "Size", "Name");
-    println!("{}", "-".repeat(50));
-    
-    let mut filenames = Vec::new();
-    for entry in entries {
-        println!("{:>10}  {}", entry.header.size, entry.header.name);
-        filenames.push(entry.header.name);
-    }
-    
-    println!("\nTotal: {} file(s)", filenames.len());
-    
-    Ok(filenames)
+    let headers: Vec<TarHeader> = entries.into_iter().map(|e| e.header).collect();
+    Ok(headers)
 }
 
 #[cfg(test)]
@@ -269,12 +256,14 @@ mod tests {
         pack(test_tar, &files);
         
         // list関数を実行
-        let result = list(test_tar).unwrap();
+        let headers = list(test_tar).unwrap();
         
         // 結果を確認
-        assert_eq!(result.len(), 2);
-        assert_eq!(result[0], test_file1);
-        assert_eq!(result[1], test_file2);
+        assert_eq!(headers.len(), 2);
+        assert_eq!(headers[0].name, test_file1);
+        assert_eq!(headers[0].size, 9);
+        assert_eq!(headers[1].name, test_file2);
+        assert_eq!(headers[1].size, 16);
         
         // tarファイルの内容を直接確認
         let tar_data = fs::read(test_tar).unwrap();

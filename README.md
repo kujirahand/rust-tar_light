@@ -42,10 +42,10 @@ unpack("archive.tar", "output_directory");
 use tar_light::list;
 
 match list("archive.tar") {
-    Ok(filenames) => {
+    Ok(headers) => {
         println!("Files in archive:");
-        for name in filenames {
-            println!("  {}", name);
+        for header in headers {
+            println!("  {} ({} bytes)", header.name, header.size);
         }
     }
     Err(e) => eprintln!("Error: {}", e),

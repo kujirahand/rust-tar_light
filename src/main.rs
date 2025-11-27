@@ -40,7 +40,15 @@ fn main() {
             }
             let tarfile = &args[2];
             match list(tarfile) {
-                Ok(_) => {},
+                Ok(headers) => {
+                    println!("Files in {}:", tarfile);
+                    println!("{:>10}  {}", "Size", "Name");
+                    println!("{}", "-".repeat(50));
+                    for header in &headers {
+                        println!("{:>10}  {}", header.size, header.name);
+                    }
+                    println!("\nTotal: {} file(s)", headers.len());
+                }
                 Err(e) => {
                     eprintln!("Error: {}", e);
                     std::process::exit(1);
@@ -142,12 +150,14 @@ mod tests {
         pack(test_tar, &files);
         
         // list関数を実行
-        let result = list(test_tar).unwrap();
+        let headers = list(test_tar).unwrap();
         
         // 結果を確認
-        assert_eq!(result.len(), 2);
-        assert_eq!(result[0], test_file1);
-        assert_eq!(result[1], test_file2);
+        assert_eq!(headers.len(), 2);
+        assert_eq!(headers[0].name, test_file1);
+        assert_eq!(headers[0].size, 11);
+        assert_eq!(headers[1].name, test_file2);
+        assert_eq!(headers[1].size, 11);
         
         // クリーンアップ
         fs::remove_file(test_file1).unwrap();

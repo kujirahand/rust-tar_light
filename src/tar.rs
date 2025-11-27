@@ -218,7 +218,6 @@ fn read_tar_u64(data: &[u8], range: Range<usize>) -> u64 {
 fn read_tar_checksum(data: &[u8], range: Range<usize>) -> u32 {
     // checksum is stored as octal string
     // e.g., "0000644\0 "=(str + null + space)
-    println!("Reading checksum from bytes: {:?}", &data[range.clone()]);
     let s = read_tar_str(&data, range)
         .trim()
         .trim_end_matches('\0')
