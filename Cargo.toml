@@ -1,6 +1,6 @@
 [package]
 name = "tar_light"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2024"
 authors = ["kujirahand"]
 description = "Simple tar archive reader and writer library"
