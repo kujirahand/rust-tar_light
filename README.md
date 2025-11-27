@@ -133,4 +133,5 @@ MIT
 
 ## Repository
 
-[https://github.com/kujirahand/rust-tar_light](https://github.com/kujirahand/rust-tar_light)
+- [https://github.com/kujirahand/rust-tar_light](https://github.com/kujirahand/rust-tar_light)
+- [crates.io/crates/tar_light](https://crates.io/crates/tar_light)
