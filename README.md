@@ -5,11 +5,8 @@ Only packs and unpacks basic tar files without compression.
 
 ## Installation
 
-Add this to your `Cargo.toml`:
-
-```toml
-[dependencies]
-tar_light = "0.1.0"
+```sh
+cargo add tar_light
 ```
 
 ## Sample Usage
