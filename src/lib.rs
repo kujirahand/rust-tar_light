@@ -79,6 +79,39 @@ use flate2::Compression;
 pub use tar::{read_tar, write_tar, TarEntry, TarHeader};
 
 // ----------------------------------------------------------------
+// Helper functions for gzip compression/decompression
+// ----------------------------------------------------------------
+/// Checks if filename indicates gzip compression
+fn is_gzipped(filename: &str) -> bool {
+    filename.ends_with(".tar.gz") || filename.ends_with(".tgz")
+}
+
+/// Decompresses gzipped data if the filename suggests it's compressed
+/// Returns the raw data unchanged if not gzipped
+fn ungzip(filename: &str, data: Vec<u8>) -> Result<Vec<u8>, std::io::Error> {
+    if is_gzipped(filename) {
+        let mut decoder = GzDecoder::new(&data[..]);
+        let mut decompressed = Vec::new();
+        decoder.read_to_end(&mut decompressed)?;
+        Ok(decompressed)
+    } else {
+        Ok(data)
+    }
+}
+
+/// Compresses data with gzip if the filename suggests it should be compressed
+/// Returns the raw data unchanged if not a gzip filename
+fn gzip(filename: &str, data: Vec<u8>) -> Result<Vec<u8>, std::io::Error> {
+    if is_gzipped(filename) {
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(&data)?;
+        encoder.finish()
+    } else {
+        Ok(data)
+    }
+}
+
+// ----------------------------------------------------------------
 // Helper functions for recursive directory packing
 // ----------------------------------------------------------------
 /// Adds a single file to entries
@@ -165,19 +198,9 @@ pub fn pack(tarfile: &str, files: &[&str]) {
     
     let tar_data = write_tar(&entries);
     
-    // Check if output should be gzipped
-    let is_gzipped = tarfile.ends_with(".tar.gz") || tarfile.ends_with(".tgz");
-    
-    let result = if is_gzipped {
-        // Compress with gzip
-        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
-        encoder.write_all(&tar_data)
-            .and_then(|_| encoder.finish())
-            .and_then(|compressed| fs::write(tarfile, compressed))
-    } else {
-        // Write as plain tar
-        fs::write(tarfile, &tar_data)
-    };
+    // Compress if needed
+    let result = gzip(tarfile, tar_data)
+        .and_then(|data| fs::write(tarfile, data));
     
     match result {
         Ok(_) => println!("Created tar archive: {}", tarfile),
@@ -199,22 +222,13 @@ pub fn unpack(tarfile: &str, output_dir: &str) {
         }
     };
     
-    // Check if input is gzipped
-    let is_gzipped = tarfile.ends_with(".tar.gz") || tarfile.ends_with(".tgz");
-    
-    let tar_data = if is_gzipped {
-        // Decompress with gzip
-        let mut decoder = GzDecoder::new(&file_data[..]);
-        let mut decompressed = Vec::new();
-        match decoder.read_to_end(&mut decompressed) {
-            Ok(_) => decompressed,
-            Err(e) => {
-                eprintln!("Error decompressing gzip: {}", e);
-                std::process::exit(1);
-            }
+    // Decompress if gzipped
+    let tar_data = match ungzip(tarfile, file_data) {
+        Ok(data) => data,
+        Err(e) => {
+            eprintln!("Error decompressing gzip: {}", e);
+            std::process::exit(1);
         }
-    } else {
-        file_data
     };
     
     let entries = read_tar(&tar_data);
@@ -261,6 +275,18 @@ pub fn unpack(tarfile: &str, output_dir: &str) {
 pub fn list(tarfile: &str) -> Result<Vec<TarHeader>, std::io::Error> {
     let file_data = fs::read(tarfile)?;
     
+    // Decompress if gzipped
+    let tar_data = ungzip(tarfile, file_data)?;
+    
+    let entries = read_tar(&tar_data);
+    let headers: Vec<TarHeader> = entries.into_iter().map(|e| e.header).collect();
+    Ok(headers)
+}
+
+/// Lists TarEntry in a tar archive (supports .tar and .tar.gz)
+pub fn list_entry(tarfile: &str) -> Result<Vec<TarEntry>, std::io::Error> {
+    let file_data = fs::read(tarfile)?;
+    
     // Check if input is gzipped
     let is_gzipped = tarfile.ends_with(".tar.gz") || tarfile.ends_with(".tgz");
     
@@ -275,8 +301,7 @@ pub fn list(tarfile: &str) -> Result<Vec<TarHeader>, std::io::Error> {
     };
     
     let entries = read_tar(&tar_data);
-    let headers: Vec<TarHeader> = entries.into_iter().map(|e| e.header).collect();
-    Ok(headers)
+    Ok(entries)
 }
 
 #[cfg(test)]

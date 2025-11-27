@@ -34,7 +34,7 @@ cargo add tar_light
 use tar_light::pack;
 
 // Create plain TAR archive
-let files = vec!["file1.txt",　"file2.txt"];
+let files = vec!["file1.txt",　"file2.txt", "dir/file3.txt"];
 pack("archive.tar", &files);
 
 // Create gzip-compressed TAR archive
