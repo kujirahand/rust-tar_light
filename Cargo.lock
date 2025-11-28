@@ -209,7 +209,7 @@ dependencies = [
 
 [[package]]
 name = "tar_light"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "chrono",
  "flate2",

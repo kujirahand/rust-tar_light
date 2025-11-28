@@ -280,6 +280,8 @@ pub fn write_tar(entries: &[TarEntry]) -> Vec<u8> {
         let padding = (512 - (entry.data.len() % 512)) % 512;
         tar_data.extend_from_slice(&vec![0u8; padding]);
     }
+    // Add two 512-byte zero blocks at the end (TAR format specification)
+    tar_data.extend_from_slice(&[0u8; 1024]);
     tar_data
 }
 
