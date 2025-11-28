@@ -18,7 +18,15 @@ unpack tarfile output_directory:
 list tarfile:
     cargo run -- list {{tarfile}}
 
+detail tarfile:
+    cargo run -- list_detail {{tarfile}}
+
 clean:
     rm *.tar
     rm *.tar.gz
     rm -f -r output_directory
+
+test:
+    cargo test
+    just pack src.tar.gz src
+    just detail src.tar.gz

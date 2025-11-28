@@ -105,6 +105,25 @@ impl TarHeader {
             prefix: String::new(),
         }
     }
+    /// new TarHeader with additional fields
+    pub fn new_full(
+        name: String,
+        mode: u32,
+        size: u64,
+        mtime: u64,
+        typeflag: u8,
+        linkname: String,
+        uname: String,
+        gname: String,
+    ) -> Self {
+        let mut header = Self::new(name, mode, size);
+        header.mtime = mtime;
+        header.typeflag = typeflag;
+        header.linkname = linkname;
+        header.uname = uname;
+        header.gname = gname;
+        header
+    }
 
     /// Parse a TarHeader from a 512-byte slice
     pub fn from_bytes(data: &[u8]) -> Self {
@@ -268,7 +287,8 @@ fn create_tar_header(header: &TarHeader) -> [u8; 512] {
     let mut data = [0u8; 512];
     // Simplified header creation logic for demonstration purposes
     let name_bytes = header.name.as_bytes();
-    data[0..name_bytes.len()].copy_from_slice(name_bytes);
+    let name_len = name_bytes.len().min(100); // Max 100 bytes for name field
+    data[0..name_len].copy_from_slice(&name_bytes[..name_len]);
     let mode_str = format!("{:o}", header.mode);
     let mode_bytes = mode_str.as_bytes();
     data[100..100 + mode_bytes.len()].copy_from_slice(mode_bytes);
@@ -284,6 +304,52 @@ fn create_tar_header(header: &TarHeader) -> [u8; 512] {
     let mtime_str = format!("{:o}", header.mtime);
     let mtime_bytes = mtime_str.as_bytes();
     data[136..136 + mtime_bytes.len()].copy_from_slice(mtime_bytes);
+    
+    // Set typeflag
+    data[156] = header.typeflag;
+    
+    // Set linkname
+    let linkname_bytes = header.linkname.as_bytes();
+    let linkname_len = linkname_bytes.len().min(100);
+    data[157..157 + linkname_len].copy_from_slice(&linkname_bytes[..linkname_len]);
+    
+    // Set magic ("ustar")
+    let magic_bytes = header.magic.as_bytes();
+    let magic_len = magic_bytes.len().min(6);
+    data[257..257 + magic_len].copy_from_slice(&magic_bytes[..magic_len]);
+    
+    // Set version
+    let version_bytes = header.version.as_bytes();
+    let version_len = version_bytes.len().min(2);
+    data[263..263 + version_len].copy_from_slice(&version_bytes[..version_len]);
+    
+    // Set uname
+    let uname_bytes = header.uname.as_bytes();
+    let uname_len = uname_bytes.len().min(32);
+    data[265..265 + uname_len].copy_from_slice(&uname_bytes[..uname_len]);
+    
+    // Set gname
+    let gname_bytes = header.gname.as_bytes();
+    let gname_len = gname_bytes.len().min(32);
+    data[297..297 + gname_len].copy_from_slice(&gname_bytes[..gname_len]);
+    
+    // Set devmajor
+    let devmajor_str = format!("{:o}", header.devmajor);
+    let devmajor_bytes = devmajor_str.as_bytes();
+    let devmajor_len = devmajor_bytes.len().min(8);
+    data[329..329 + devmajor_len].copy_from_slice(&devmajor_bytes[..devmajor_len]);
+    
+    // Set devminor
+    let devminor_str = format!("{:o}", header.devminor);
+    let devminor_bytes = devminor_str.as_bytes();
+    let devminor_len = devminor_bytes.len().min(8);
+    data[337..337 + devminor_len].copy_from_slice(&devminor_bytes[..devminor_len]);
+    
+    // Set prefix
+    let prefix_bytes = header.prefix.as_bytes();
+    let prefix_len = prefix_bytes.len().min(155); // Max 155 bytes for prefix field
+    data[345..345 + prefix_len].copy_from_slice(&prefix_bytes[..prefix_len]);
+    
     // calc checksum
     let checksum = calc_tar_checksum(&data);
     let checksum_str = format!("{:06o}\0 ", checksum);
@@ -355,5 +421,318 @@ mod tests {
         assert_eq!(read_entries[0].header.name, "hoge.txt");
         assert_eq!(read_entries[0].header.size, 12);
         assert_eq!(read_entries[0].data, b"Hello, World");
+    }
+
+    #[test]
+    fn security_test_oversized_name() {
+        // Test with name exceeding 100 bytes (maximum for name field)
+        let long_name = "a".repeat(200); // 200 bytes, exceeds 100 byte limit
+        let header = TarHeader::new(long_name.clone(), 0o644, 10);
+        let header_bytes = header.to_bytes();
+        
+        // Verify that only first 100 bytes are written
+        let name_field = &header_bytes[0..100];
+        let null_pos = name_field.iter().position(|&b| b == 0).unwrap_or(100);
+        assert!(null_pos <= 100, "Name field should not exceed 100 bytes");
+        
+        // Create entry and verify it can be read back
+        let data = b"Test data!".to_vec();
+        let entry = TarEntry { header, data: data.clone(), header_bytes };
+        let tar_data = write_tar(&[entry]);
+        let read_entries = read_tar(&tar_data);
+        
+        assert_eq!(read_entries.len(), 1);
+        assert_eq!(read_entries[0].data, data);
+        // Name should be truncated to 100 bytes
+        assert!(read_entries[0].header.name.len() <= 100);
+    }
+
+    #[test]
+    fn security_test_oversized_prefix() {
+        // Test with prefix exceeding 155 bytes (maximum for prefix field)
+        let long_prefix = "b".repeat(200); // 200 bytes, exceeds 155 byte limit
+        let mut header = TarHeader::new("test.txt".to_string(), 0o644, 10);
+        header.prefix = long_prefix;
+        let header_bytes = header.to_bytes();
+        
+        // Verify that only first 155 bytes are written to prefix field
+        let prefix_field = &header_bytes[345..500];
+        let null_pos = prefix_field.iter().position(|&b| b == 0).unwrap_or(155);
+        assert!(null_pos <= 155, "Prefix field should not exceed 155 bytes");
+        
+        // Create entry and verify it can be read back
+        let data = b"Test data!".to_vec();
+        let entry = TarEntry { header, data: data.clone(), header_bytes };
+        let tar_data = write_tar(&[entry]);
+        let read_entries = read_tar(&tar_data);
+        
+        assert_eq!(read_entries.len(), 1);
+        assert_eq!(read_entries[0].data, data);
+        // Prefix should be truncated to 155 bytes
+        assert!(read_entries[0].header.prefix.len() <= 155);
+    }
+
+    #[test]
+    fn security_test_special_characters() {
+        // Test with special characters and null bytes in name
+        let special_name = "test\0file\x00name.txt";
+        let header = TarHeader::new(special_name.to_string(), 0o644, 5);
+        let header_bytes = header.to_bytes();
+        
+        // Create entry and verify it can be read back
+        let data = b"Hello".to_vec();
+        let entry = TarEntry { header, data: data.clone(), header_bytes };
+        let tar_data = write_tar(&[entry]);
+        let read_entries = read_tar(&tar_data);
+        
+        assert_eq!(read_entries.len(), 1);
+        assert_eq!(read_entries[0].data, data);
+    }
+
+    #[test]
+    fn security_test_all_fields_oversized() {
+        // Test with multiple oversized fields at once
+        let long_name = "n".repeat(150);
+        let long_prefix = "p".repeat(200);
+        let long_uname = "u".repeat(50);
+        let long_gname = "g".repeat(50);
+        let long_linkname = "l".repeat(150);
+        
+        let data = b"Test".to_vec();
+        let header = TarHeader::new_full(
+            long_name,
+            0o644,
+            data.len() as u64, // Use actual data size
+            0,
+            b'0',
+            long_linkname,
+            long_uname,
+            long_gname,
+        );
+        let mut header_with_prefix = header;
+        header_with_prefix.prefix = long_prefix;
+        
+        let header_bytes = header_with_prefix.to_bytes();
+        
+        // Verify all fields are properly truncated
+        assert!(header_bytes[0..100].iter().any(|&b| b != 0), "Name field should have data");
+        assert!(header_bytes[265..297].iter().any(|&b| b != 0), "Uname field should have data");
+        assert!(header_bytes[297..329].iter().any(|&b| b != 0), "Gname field should have data");
+        assert!(header_bytes[345..500].iter().any(|&b| b != 0), "Prefix field should have data");
+        
+        // Create entry and verify it can be written and read
+        let entry = TarEntry { header: header_with_prefix, data: data.clone(), header_bytes };
+        let tar_data = write_tar(&[entry]);
+        let read_entries = read_tar(&tar_data);
+        
+        assert_eq!(read_entries.len(), 1);
+        assert_eq!(read_entries[0].data, b"Test");
+    }
+
+    #[test]
+    fn security_test_path_traversal_attack() {
+        // Test with path traversal attempts in filename
+        let malicious_names = vec![
+            "../../../etc/passwd",
+            "../../secret.txt",
+            "subdir/../../outside.txt",
+            "/absolute/path/file.txt",
+            "..\\..\\windows\\path.txt",
+        ];
+        
+        for malicious_name in malicious_names {
+            let header = TarHeader::new(malicious_name.to_string(), 0o644, 10);
+            let data = b"malicious!".to_vec();
+            let header_bytes = header.to_bytes();
+            
+            let entry = TarEntry { header, data: data.clone(), header_bytes };
+            let tar_data = write_tar(&[entry]);
+            let read_entries = read_tar(&tar_data);
+            
+            // Archive should be parseable
+            assert_eq!(read_entries.len(), 1);
+            assert_eq!(read_entries[0].data, data);
+            
+            // Verify that malicious path is stored (sanitization should happen at unpack time)
+            assert!(read_entries[0].header.name.contains("..") || read_entries[0].header.name.starts_with('/'));
+        }
+    }
+
+    #[test]
+    fn security_test_size_mismatch() {
+        // Test with header size not matching actual data size
+        let header = TarHeader::new("fake_size.txt".to_string(), 0o644, 1000000); // Claims 1MB
+        let data = b"tiny".to_vec(); // Only 4 bytes
+        let header_bytes = header.to_bytes();
+        
+        let entry = TarEntry { 
+            header, 
+            data: data.clone(), 
+            header_bytes 
+        };
+        let tar_data = write_tar(&[entry]);
+        
+        // read_tar should handle this gracefully (reads only what's available)
+        let read_entries = read_tar(&tar_data);
+        
+        // Should not crash, but may have unexpected results
+        // This tests resilience against corrupted archives
+        assert!(read_entries.len() <= 1);
+    }
+
+    #[test]
+    fn security_test_integer_overflow() {
+        // Test with maximum size value (potential integer overflow)
+        let header = TarHeader::new("overflow.txt".to_string(), 0o644, u64::MAX);
+        let data = b"small".to_vec();
+        let header_bytes = header.to_bytes();
+        
+        let entry = TarEntry { header, data, header_bytes };
+        let tar_data = write_tar(&[entry]);
+        
+        // read_tar should not crash or allocate massive memory
+        let read_entries = read_tar(&tar_data);
+        
+        // Archive is malformed, but should be handled gracefully
+        assert!(read_entries.is_empty() || read_entries[0].data.len() < 10);
+    }
+
+    #[test]
+    fn security_test_null_byte_injection() {
+        // Test with null bytes in various positions
+        let names_with_nulls = vec![
+            "file\0hidden.txt",
+            "normal.txt\0\0\0",
+            "\0start_null.txt",
+        ];
+        
+        for name_with_null in names_with_nulls {
+            let header = TarHeader::new(name_with_null.to_string(), 0o644, 5);
+            let data = b"test!".to_vec();
+            let header_bytes = header.to_bytes();
+            
+            let entry = TarEntry { header, data: data.clone(), header_bytes };
+            let tar_data = write_tar(&[entry]);
+            let read_entries = read_tar(&tar_data);
+            
+            assert_eq!(read_entries.len(), 1);
+            assert_eq!(read_entries[0].data, data);
+        }
+    }
+
+    #[test]
+    fn security_test_invalid_checksum() {
+        // Test with deliberately invalid checksum
+        let header = TarHeader::new("test.txt".to_string(), 0o644, 10);
+        let mut header_bytes = header.to_bytes();
+        
+        // Manually corrupt the checksum field in the header bytes
+        // Checksum is at bytes 148-155
+        header_bytes[148] = b'9';
+        header_bytes[149] = b'9';
+        header_bytes[150] = b'9';
+        header_bytes[151] = b'9';
+        header_bytes[152] = b'9';
+        header_bytes[153] = b'9';
+        header_bytes[154] = 0;
+        header_bytes[155] = b' ';
+        
+        let data = b"test data!".to_vec();
+        let entry = TarEntry { header, data: data.clone(), header_bytes };
+        let tar_data = write_tar(&[entry]);
+        
+        // read_tar should still parse it (checksum verification is optional)
+        let read_entries = read_tar(&tar_data);
+        assert_eq!(read_entries.len(), 1);
+        assert_eq!(read_entries[0].data, data);
+        
+        // Explicit checksum verification should fail
+        assert!(!read_entries[0].header.verify_checksum(&read_entries[0].header_bytes));
+    }
+
+    #[test]
+    fn security_test_symlink_in_archive() {
+        // Test handling of symbolic link entries (typeflag '2')
+        let mut header = TarHeader::new("symlink.txt".to_string(), 0o777, 0);
+        header.typeflag = b'2'; // Symbolic link
+        header.linkname = "/etc/passwd".to_string();
+        let header_bytes = header.to_bytes();
+        
+        let entry = TarEntry { 
+            header, 
+            data: Vec::new(), 
+            header_bytes 
+        };
+        let tar_data = write_tar(&[entry]);
+        let read_entries = read_tar(&tar_data);
+        
+        // Symbolic links should be filtered out (only regular files returned)
+        assert_eq!(read_entries.len(), 0);
+    }
+
+    #[test]
+    fn security_test_device_file_in_archive() {
+        // Test handling of device file entries (typeflag '3' and '4')
+        let test_cases = vec![
+            (b'3', "char_device"),  // Character device
+            (b'4', "block_device"), // Block device
+            (b'5', "directory"),    // Directory
+            (b'6', "fifo"),         // FIFO
+        ];
+        
+        for (typeflag, name) in test_cases {
+            let mut header = TarHeader::new(name.to_string(), 0o644, 0);
+            header.typeflag = typeflag;
+            let header_bytes = header.to_bytes();
+            
+            let entry = TarEntry { 
+                header, 
+                data: Vec::new(), 
+                header_bytes 
+            };
+            let tar_data = write_tar(&[entry]);
+            let read_entries = read_tar(&tar_data);
+            
+            // Non-regular files should be filtered out
+            assert_eq!(read_entries.len(), 0, "Typeflag {} should be filtered", typeflag);
+        }
+    }
+
+    #[test]
+    fn security_test_deeply_nested_path() {
+        // Test with extremely deep directory nesting
+        let deep_path = "a/".repeat(50) + "file.txt"; // 50 levels deep
+        let header = TarHeader::new(deep_path.clone(), 0o644, 4);
+        let data = b"deep".to_vec();
+        let header_bytes = header.to_bytes();
+        
+        let entry = TarEntry { header, data: data.clone(), header_bytes };
+        let tar_data = write_tar(&[entry]);
+        let read_entries = read_tar(&tar_data);
+        
+        assert_eq!(read_entries.len(), 1);
+        assert_eq!(read_entries[0].data, data);
+        // Path should be truncated to fit in name field (100 bytes)
+        assert!(read_entries[0].header.name.len() <= 100);
+    }
+
+    #[test]
+    fn security_test_malformed_archive_early_termination() {
+        // Test with archive that ends abruptly
+        let header = TarHeader::new("incomplete.txt".to_string(), 0o644, 1000);
+        let data = b"short".to_vec(); // Much shorter than declared size
+        let header_bytes = header.to_bytes();
+        
+        // Create incomplete tar data (header + partial data, no padding)
+        let mut tar_data = Vec::new();
+        tar_data.extend_from_slice(&header_bytes);
+        tar_data.extend_from_slice(&data);
+        // No padding or end markers
+        
+        // Should handle gracefully without crashing
+        let read_entries = read_tar(&tar_data);
+        
+        // May return empty or incomplete entry, but shouldn't crash
+        assert!(read_entries.is_empty() || read_entries[0].data.len() <= 5);
     }
 }

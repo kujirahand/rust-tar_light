@@ -1,6 +1,6 @@
 # tar_light for Rust
 
-A simple and lightweight tar archive reader and writer library in Rust.
+A simple and lightweight `tar` archive reader and writer library in Rust.
 
 ## Features
 
@@ -9,22 +9,6 @@ A simple and lightweight tar archive reader and writer library in Rust.
 - 📋 List files in archives
 - 🚀 Simple and intuitive API
 - 🔧 Command-line tool included
-- ⚡ No external dependencies except `flate2` for gzip support
-
-## Installation
-
-Add to your `Cargo.toml`:
-
-```toml
-[dependencies]
-tar_light = "0.1"
-```
-
-Or use cargo:
-
-```sh
-cargo add tar_light
-```
 
 ## Usage
 
@@ -33,8 +17,10 @@ cargo add tar_light
 ```rust
 use tar_light::pack;
 
-// Create plain TAR archive
+// List of files to include in the archive
 let files = vec!["file1.txt",　"file2.txt", "dir/file3.txt"];
+
+// Create plain TAR archive
 pack("archive.tar", &files);
 
 // Create gzip-compressed TAR archive
@@ -79,7 +65,7 @@ use std::fs;
 // Reading TAR archives
 let tar_data = fs::read("archive.tar").unwrap();
 let entries = read_tar(&tar_data);
-
+// list entries
 for entry in entries {
     println!("{}: {} bytes", entry.header.name, entry.header.size);
 }
@@ -94,6 +80,29 @@ entries.push(TarEntry { header, data, header_bytes });
 let tar_data = write_tar(&entries);
 fs::write("new_archive.tar", tar_data).unwrap();
 ```
+
+## Supported Formats
+
+- `.tar` - Plain TAR archives
+- `.tar.gz` - Gzip-compressed TAR archives
+- `.tgz` - Gzip-compressed TAR archives (alternative extension)
+
+## Installation
+
+Add to your `Cargo.toml`:
+
+```toml
+[dependencies]
+tar_light = "0.1"
+```
+
+Or use cargo:
+
+```sh
+cargo add tar_light
+```
+
+The format is automatically detected based on the file extension.
 
 ## Command Line Tool
 
@@ -115,14 +124,6 @@ cargo run -- unpack archive.tar.gz output_dir
 # List files in archive
 cargo run -- list archive.tar.gz
 ```
-
-## Supported Formats
-
-- `.tar` - Plain TAR archives
-- `.tar.gz` - Gzip-compressed TAR archives
-- `.tgz` - Gzip-compressed TAR archives (alternative extension)
-
-The format is automatically detected based on the file extension.
 
 ## Easy Building with just
 
@@ -157,6 +158,18 @@ brew install just
 # Other platforms
 cargo install just
 ```
+
+
+## Security
+
+This library handles untrusted TAR archives. Please review [SECURITY.md](./SECURITY.md) for important security considerations, known vulnerabilities, and best practices when working with TAR archives from untrusted sources.
+
+**Key Security Concerns:**
+- Path traversal vulnerabilities in `unpack()` function
+- File overwrites without confirmation
+- Symbolic link handling
+
+See [SECURITY.md](./SECURITY.md) for detailed information and mitigation strategies.
 
 ## License
 

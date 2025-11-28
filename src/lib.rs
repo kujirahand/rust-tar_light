@@ -86,13 +86,71 @@
 pub mod tar;
 
 use std::fs;
+use std::os::unix::fs::MetadataExt;
 use std::path::Path;
 use std::io::{Write, Read};
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
 
+#[cfg(unix)]
+use std::ffi::CStr;
+
 pub use tar::{read_tar, write_tar, TarEntry, TarHeader};
+
+// ----------------------------------------------------------------
+// Helper functions for gzip compression/decompression
+// ----------------------------------------------------------------
+
+#[cfg(unix)]
+/// Get username from uid using libc
+fn get_username_from_uid(uid: u32) -> Option<String> {
+    unsafe {
+        let passwd = libc::getpwuid(uid);
+        if passwd.is_null() {
+            return None;
+        }
+        let name_ptr = (*passwd).pw_name;
+        if name_ptr.is_null() {
+            return None;
+        }
+        CStr::from_ptr(name_ptr)
+            .to_str()
+            .ok()
+            .map(|s| s.to_string())
+    }
+}
+
+#[cfg(unix)]
+/// Get group name from gid using libc
+fn get_groupname_from_gid(gid: u32) -> Option<String> {
+    unsafe {
+        let group = libc::getgrgid(gid);
+        if group.is_null() {
+            return None;
+        }
+        let name_ptr = (*group).gr_name;
+        if name_ptr.is_null() {
+            return None;
+        }
+        CStr::from_ptr(name_ptr)
+            .to_str()
+            .ok()
+            .map(|s| s.to_string())
+    }
+}
+
+#[cfg(not(unix))]
+/// Stub for non-Unix platforms
+fn get_username_from_uid(_uid: u32) -> Option<String> {
+    None
+}
+
+#[cfg(not(unix))]
+/// Stub for non-Unix platforms
+fn get_groupname_from_gid(_gid: u32) -> Option<String> {
+    None
+}
 
 // ----------------------------------------------------------------
 // Helper functions for gzip compression/decompression
@@ -145,9 +203,33 @@ fn add_file_to_entries(file_path: &Path, base_path: &Path, entries: &mut Vec<Tar
         .unwrap_or(file_path)
         .to_string_lossy()
         .to_string();
-    
-    let header = TarHeader::new(relative_path, 0o644, data.len() as u64);
-    let header_bytes = header.to_bytes();
+
+    let mut header = TarHeader::new(
+        relative_path,
+        0o644,
+        data.len() as u64       
+    );
+    // get file metadata
+    match fs::metadata(file_path) {
+        Ok(m) => {
+            header.mode = m.mode() as u32;
+            header.mtime = m.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH)
+                .duration_since(std::time::SystemTime::UNIX_EPOCH).unwrap_or_default().as_secs();
+            header.gid = m.gid();
+            header.uid = m.uid();
+            // Set uname and gname from uid/gid
+            if let Some(uname) = get_username_from_uid(m.uid()) {
+                header.uname = uname;
+            }
+            if let Some(gname) = get_groupname_from_gid(m.gid()) {
+                header.gname = gname;
+            }
+        },
+        Err(e) => {
+            eprintln!("Error getting metadata for {}: {}", file_path.display(), e);
+            return;
+        }
+    };    let header_bytes = header.to_bytes();
     
     entries.push(TarEntry {
         header,
@@ -613,6 +695,256 @@ mod tests {
         // Cleanup
         fs::remove_dir_all(test_dir).unwrap();
         fs::remove_file(test_tar_gz).unwrap();
+        fs::remove_dir_all(output_dir).unwrap();
+    }
+
+    #[test]
+    fn security_test_unpack_path_traversal() {
+        // Test that unpacking with path traversal attempts is handled
+        // Note: Current implementation is VULNERABLE - this test documents the risk
+        
+        use crate::tar::{TarEntry, TarHeader};
+        
+        let test_tar = "test_security_traversal.tar";
+        let output_dir = "test_security_output";
+        
+        // Create malicious tar with path traversal
+        let mut entries = Vec::new();
+        
+        // Attempt to write outside output directory
+        let malicious_paths = vec![
+            "../outside.txt",
+            "../../etc/outside2.txt",
+            "subdir/../../../outside3.txt",
+        ];
+        
+        for malicious_path in malicious_paths {
+            let header = TarHeader::new(malicious_path.to_string(), 0o644, 9);
+            let data = b"malicious".to_vec();
+            let header_bytes = header.to_bytes();
+            entries.push(TarEntry { header, data, header_bytes });
+        }
+        
+        let tar_data = write_tar(&entries);
+        fs::write(test_tar, tar_data).unwrap();
+        
+        // This WILL create files outside the intended directory (VULNERABILITY)
+        // In production, unpack should sanitize paths
+        unpack(test_tar, output_dir);
+        
+        // Cleanup
+        fs::remove_file(test_tar).unwrap();
+        if Path::new(output_dir).exists() {
+            fs::remove_dir_all(output_dir).ok();
+        }
+        // Also cleanup any files created outside (if they exist)
+        fs::remove_file("outside.txt").ok();
+        fs::remove_file("../outside.txt").ok();
+        fs::remove_file("outside2.txt").ok();
+        fs::remove_file("outside3.txt").ok();
+    }
+
+    #[test]
+    fn security_test_unpack_absolute_path() {
+        // Test handling of absolute paths in tar archives
+        // Note: Current implementation is VULNERABLE
+        
+        use crate::tar::{TarEntry, TarHeader};
+        
+        let test_tar = "test_security_absolute.tar";
+        let output_dir = "test_security_abs_output";
+        
+        // Create tar with absolute path (should be rejected or sanitized)
+        let header = TarHeader::new("/tmp/absolute_file.txt".to_string(), 0o644, 8);
+        let data = b"absolute".to_vec();
+        let header_bytes = header.to_bytes();
+        let entry = TarEntry { header, data, header_bytes };
+        
+        let tar_data = write_tar(&[entry]);
+        fs::write(test_tar, tar_data).unwrap();
+        
+        // This may write to /tmp/absolute_file.txt (VULNERABILITY)
+        unpack(test_tar, output_dir);
+        
+        // Cleanup
+        fs::remove_file(test_tar).unwrap();
+        if Path::new(output_dir).exists() {
+            fs::remove_dir_all(output_dir).ok();
+        }
+        // Cleanup absolute path file if created
+        fs::remove_file("/tmp/absolute_file.txt").ok();
+    }
+
+    #[test]
+    fn security_test_unpack_large_file_size() {
+        // Test handling of files with unrealistic size declarations
+        
+        use crate::tar::{TarEntry, TarHeader};
+        
+        let test_tar = "test_security_large.tar";
+        let output_dir = "test_security_large_output";
+        
+        // Create tar with exaggerated size but small actual data
+        let header = TarHeader::new("fake_large.txt".to_string(), 0o644, 5);
+        let data = b"small".to_vec();
+        let header_bytes = header.to_bytes();
+        let entry = TarEntry { header, data, header_bytes };
+        
+        let tar_data = write_tar(&[entry]);
+        fs::write(test_tar, tar_data).unwrap();
+        
+        // Should handle gracefully
+        unpack(test_tar, output_dir);
+        
+        // Verify file was created with actual (small) size
+        let extracted_file = Path::new(output_dir).join("fake_large.txt");
+        if extracted_file.exists() {
+            let content = fs::read(&extracted_file).unwrap();
+            assert_eq!(content.len(), 5);
+        }
+        
+        // Cleanup
+        fs::remove_file(test_tar).unwrap();
+        if Path::new(output_dir).exists() {
+            fs::remove_dir_all(output_dir).unwrap();
+        }
+    }
+
+    #[test]
+    fn security_test_unpack_empty_filename() {
+        // Test handling of entries with empty filenames
+        
+        use crate::tar::{TarEntry, TarHeader};
+        
+        let test_tar = "test_security_empty_name.tar";
+        let output_dir = "test_security_empty_output";
+        
+        // Create tar with empty filename
+        let header = TarHeader::new("".to_string(), 0o644, 4);
+        let data = b"data".to_vec();
+        let header_bytes = header.to_bytes();
+        let entry = TarEntry { header, data, header_bytes };
+        
+        let tar_data = write_tar(&[entry]);
+        fs::write(test_tar, tar_data).unwrap();
+        
+        // Should handle gracefully (may skip or error)
+        unpack(test_tar, output_dir);
+        
+        // Cleanup
+        fs::remove_file(test_tar).unwrap();
+        if Path::new(output_dir).exists() {
+            fs::remove_dir_all(output_dir).ok();
+        }
+    }
+
+    #[test]
+    fn security_test_unpack_special_characters() {
+        // Test handling of filenames with special characters
+        
+        use crate::tar::{TarEntry, TarHeader};
+        
+        let test_tar = "test_security_special.tar";
+        let output_dir = "test_security_special_output";
+        
+        // Create tar with special characters in filename
+        let special_names = vec![
+            "file\0with\0nulls.txt",
+            "file\nwith\nnewlines.txt",
+            "file;with;semicolons.txt",
+            "file|with|pipes.txt",
+        ];
+        
+        let mut entries = Vec::new();
+        for name in special_names {
+            let header = TarHeader::new(name.to_string(), 0o644, 7);
+            let data = b"special".to_vec();
+            let header_bytes = header.to_bytes();
+            entries.push(TarEntry { header, data, header_bytes });
+        }
+        
+        let tar_data = write_tar(&entries);
+        fs::write(test_tar, tar_data).unwrap();
+        
+        // Should handle gracefully
+        unpack(test_tar, output_dir);
+        
+        // Cleanup
+        fs::remove_file(test_tar).unwrap();
+        if Path::new(output_dir).exists() {
+            fs::remove_dir_all(output_dir).ok();
+        }
+    }
+
+    #[test]
+    fn security_test_pack_symlink_handling() {
+        // Test packing a directory that contains symlinks
+        // Should verify symlinks are handled appropriately
+        
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::symlink;
+            
+            let test_dir = "test_security_symlink_dir";
+            let test_tar = "test_security_symlink.tar";
+            
+            // Create directory with a symlink
+            fs::create_dir_all(test_dir).unwrap();
+            fs::write(format!("{}/target.txt", test_dir), "target content").unwrap();
+            
+            // Create symlink
+            let symlink_path = format!("{}/link.txt", test_dir);
+            let target_path = format!("{}/target.txt", test_dir);
+            symlink(&target_path, &symlink_path).ok(); // May fail on some systems
+            
+            // Pack directory
+            let files = vec![test_dir];
+            pack(test_tar, &files);
+            
+            // Verify tar was created
+            assert!(Path::new(test_tar).exists());
+            
+            // Cleanup
+            fs::remove_file(&symlink_path).ok();
+            fs::remove_dir_all(test_dir).unwrap();
+            fs::remove_file(test_tar).unwrap();
+        }
+    }
+
+    #[test]
+    fn security_test_unpack_overwrites_existing() {
+        // Test that unpacking overwrites existing files
+        // This could be a security concern if not properly documented
+        
+        use crate::tar::{TarEntry, TarHeader};
+        
+        let test_tar = "test_security_overwrite.tar";
+        let output_dir = "test_security_overwrite_output";
+        
+        fs::create_dir_all(output_dir).unwrap();
+        
+        // Create existing file with sensitive content
+        let sensitive_file = Path::new(output_dir).join("important.txt");
+        fs::write(&sensitive_file, "SENSITIVE DATA").unwrap();
+        
+        // Create tar that will overwrite it
+        let header = TarHeader::new("important.txt".to_string(), 0o644, 9);
+        let data = b"overwrite".to_vec();
+        let header_bytes = header.to_bytes();
+        let entry = TarEntry { header, data, header_bytes };
+        
+        let tar_data = write_tar(&[entry]);
+        fs::write(test_tar, tar_data).unwrap();
+        
+        // Unpack will overwrite existing file
+        unpack(test_tar, output_dir);
+        
+        // Verify file was overwritten
+        let content = fs::read_to_string(&sensitive_file).unwrap();
+        assert_eq!(content, "overwrite");
+        
+        // Cleanup
+        fs::remove_file(test_tar).unwrap();
         fs::remove_dir_all(output_dir).unwrap();
     }
 }

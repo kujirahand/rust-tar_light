@@ -1,5 +1,6 @@
 use tar_light::{pack, unpack, list};
 use std::env;
+use chrono::{Utc, TimeZone};
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -75,7 +76,8 @@ fn main() {
                         println!("  GID:         {}", header.gid);
                         println!("  User:        {}", if header.uname.is_empty() { "(none)" } else { &header.uname });
                         println!("  Group:       {}", if header.gname.is_empty() { "(none)" } else { &header.gname });
-                        println!("  Timestamp:   {} (unix time)", header.mtime);
+                        let datetime = Utc.timestamp_opt(header.mtime as i64, 0).unwrap();
+                        println!("  Timestamp:   {}", datetime.format("%Y-%m-%d %H:%M:%S"));
                         println!("  Checksum:    {}", header.checksum);
                         println!("  Type:        {}", match header.typeflag {
                             b'0' | 0 => "Regular file",
