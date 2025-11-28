@@ -22,6 +22,7 @@ detail tarfile:
     cargo run -- list_detail {{tarfile}}
 
 clean:
+    cargo clean
     rm *.tar
     rm *.tar.gz
     rm -f -r output_directory
