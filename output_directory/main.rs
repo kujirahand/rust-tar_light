@@ -30,12 +30,15 @@ fn main() {
                 std::process::exit(1);
             }
             
-            // Check for -y option
+            // Check for -y or -n option
             let mut overwrite = false;
             let mut arg_idx = 2;
             
             if args.len() >= 3 && args[2] == "-y" {
                 overwrite = true;
+                arg_idx = 3;
+            } else if args.len() >= 3 && args[2] == "-n" {
+                overwrite = false;
                 arg_idx = 3;
             }
             
@@ -47,7 +50,7 @@ fn main() {
             
             let tarfile = &args[arg_idx];
             let output_dir = &args[arg_idx + 1];
-            unpack_with_options(tarfile, output_dir, overwrite, true);
+            unpack_with_options(tarfile, output_dir, overwrite);
         }
         "list" => {
             if args.len() < 3 {
@@ -182,7 +185,7 @@ mod tests {
         pack(test_tar, &files);
         
         // Execute unpack function
-        unpack_with_options(test_tar, output_dir, true, false);
+        unpack_with_options(test_tar, output_dir, true);
         
         // Verify file was extracted
         let extracted_file = Path::new(output_dir).join(test_file);

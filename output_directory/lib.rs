@@ -312,7 +312,7 @@ pub fn pack(tarfile: &str, files: &[&str]) {
 
 /// Unpacks files from a tar archive (supports .tar and .tar.gz)
 pub fn unpack(tarfile: &str, output_dir: &str) {
-    unpack_with_options(tarfile, output_dir, false, true);
+    unpack_with_options(tarfile, output_dir, false);
 }
 
 /// Unpacks a tar archive with options
@@ -322,8 +322,7 @@ pub fn unpack(tarfile: &str, output_dir: &str) {
 /// * `output_dir` - Output directory
 /// * `overwrite` - If true, overwrite existing files without prompting
 ///                 If false, skip existing files
-/// * `use_prompt` - If true, prompt user for each existing file
-pub fn unpack_with_options(tarfile: &str, output_dir: &str, overwrite: bool, use_prompt: bool) {
+pub fn unpack_with_options(tarfile: &str, output_dir: &str, overwrite: bool) {
     let mut overwrite = overwrite;
     // Read file
     let file_data = match fs::read(tarfile) {
@@ -359,25 +358,20 @@ pub fn unpack_with_options(tarfile: &str, output_dir: &str, overwrite: bool, use
         // Check if file exists and overwrite is false
         if file_path.exists() {
             if !overwrite {
-                if use_prompt {
-                    // ask to user
-                    println!("❓File '{}' already exists. Overwrite? ([Y]es/[N]o/[A]ll): ", entry.header.name);
-                    let stdin = io::stdin();
-                    let mut line = String::new();
-                    stdin.lock().read_line(&mut line).unwrap_or(0);
-                    let answer = line.trim().to_lowercase();
-                    
-                    if answer == "a" || answer == "all" {
-                        // Overwrite this and all subsequent files
-                        println!("⚡ Overwriting all files...");
-                        overwrite = true;
-                    } else if answer == "y" || answer == "yes" {
-                    } else {
-                        println!("- Skipping: {}", entry.header.name);
-                        continue;
-                    }
+                // ask to user
+                println!("File '{}' already exists. Overwrite? ([Y]es/[N]o/[A]ll): ", entry.header.name);
+                let stdin = io::stdin();
+                let mut line = String::new();
+                stdin.lock().read_line(&mut line).unwrap_or(0);
+                let answer = line.trim().to_lowercase();
+                
+                if answer == "a" || answer == "all" {
+                    // Overwrite this and all subsequent files
+                    println!("Overwriting all files...");
+                    overwrite = true;
+                } else if answer == "y" || answer == "yes" {
                 } else {
-                    println!("- Skipping: {}", entry.header.name);
+                    println!("Skipping: {}", entry.header.name);
                     continue;
                 }
             }
@@ -388,7 +382,7 @@ pub fn unpack_with_options(tarfile: &str, output_dir: &str, overwrite: bool, use
         if let Some(parent) = file_path.parent() {
             if !parent.exists() {
                 if let Err(e) = fs::create_dir_all(parent) {
-                    eprintln!("❌ Error creating directory {}: {}", parent.display(), e);
+                    eprintln!("Error creating directory {}: {}", parent.display(), e);
                     continue;
                 }
             }
@@ -397,14 +391,14 @@ pub fn unpack_with_options(tarfile: &str, output_dir: &str, overwrite: bool, use
         match fs::File::create(&file_path) {
             Ok(mut file) => {
                 if let Err(e) = file.write_all(&entry.data) {
-                    eprintln!("❌ Error writing {}: {}", entry.header.name, e);
+                    eprintln!("Error writing {}: {}", entry.header.name, e);
                 } else {
                     let overwrite_msg = if flag_overwrite { " (overwritten)" } else { "" };
-                    println!("- Extracted: {}{}", entry.header.name, overwrite_msg);
+                    println!("Extracted: {}{}", entry.header.name, overwrite_msg);
                 }
             }
             Err(e) => {
-                eprintln!("❌ Error creating {}: {}", entry.header.name, e);
+                eprintln!("Error creating {}: {}", entry.header.name, e);
             }
         }
     }
@@ -496,7 +490,7 @@ mod tests {
         pack(test_tar, &files);
         
         // Execute unpack function
-        unpack_with_options(test_tar, output_dir, false, false);
+        unpack(test_tar, output_dir);
         
         // Verify file was extracted
         let extracted_file = Path::new(output_dir).join(test_file);
@@ -578,7 +572,7 @@ mod tests {
         assert_eq!(headers[1].size, 24);
         
         // Execute unpack function (extract from .tar.gz)
-        unpack_with_options(test_tar_gz, output_dir, false, false);
+        unpack(test_tar_gz, output_dir);
         
         // Verify files were extracted
         let extracted_file1 = Path::new(output_dir).join(test_file1);
@@ -651,7 +645,7 @@ mod tests {
         pack(test_tar, &files);
         
         // unpack
-        unpack_with_options(test_tar, output_dir, false, false);
+        unpack(test_tar, output_dir);
         
         // Verify all files were extracted
         assert!(Path::new(output_dir).join("root.txt").exists());
@@ -726,7 +720,7 @@ mod tests {
         assert_eq!(headers.len(), 3);
         
         // Verify by unpacking
-        unpack_with_options(test_tar_gz, output_dir, false, false);
+        unpack(test_tar_gz, output_dir);
         assert!(Path::new(output_dir).join("file1.txt").exists());
         assert!(Path::new(output_dir).join("nested/file2.txt").exists());
         assert!(Path::new(output_dir).join("nested/deep/file3.txt").exists());
@@ -773,7 +767,7 @@ mod tests {
         
         // This WILL create files outside the intended directory (VULNERABILITY)
         // In production, unpack should sanitize paths
-        unpack_with_options(test_tar, output_dir, false, false);
+        unpack(test_tar, output_dir);
         
         // Cleanup
         fs::remove_file(test_tar).unwrap();
@@ -807,7 +801,7 @@ mod tests {
         fs::write(test_tar, tar_data).unwrap();
         
         // This may write to /tmp/absolute_file.txt (VULNERABILITY)
-        unpack_with_options(test_tar, output_dir, false, false);
+        unpack(test_tar, output_dir);
         
         // Cleanup
         fs::remove_file(test_tar).unwrap();
@@ -837,7 +831,7 @@ mod tests {
         fs::write(test_tar, tar_data).unwrap();
         
         // Should handle gracefully
-        unpack_with_options(test_tar, output_dir, false, false);
+        unpack(test_tar, output_dir);
         
         // Verify file was created with actual (small) size
         let extracted_file = Path::new(output_dir).join("fake_large.txt");
@@ -872,7 +866,7 @@ mod tests {
         fs::write(test_tar, tar_data).unwrap();
         
         // Should handle gracefully (may skip or error)
-        unpack_with_options(test_tar, output_dir, false, false);
+        unpack(test_tar, output_dir);
         
         // Cleanup
         fs::remove_file(test_tar).unwrap();
@@ -910,7 +904,7 @@ mod tests {
         fs::write(test_tar, tar_data).unwrap();
         
         // Should handle gracefully
-        unpack_with_options(test_tar, output_dir, false, false);
+        unpack(test_tar, output_dir);
         
         // Cleanup
         fs::remove_file(test_tar).unwrap();
@@ -980,7 +974,7 @@ mod tests {
         fs::write(test_tar, tar_data).unwrap();
         
         // Unpack will overwrite existing file
-        unpack_with_options(test_tar, output_dir, true, false);
+        unpack(test_tar, output_dir);
         
         // Verify file was overwritten
         let content = fs::read_to_string(&sensitive_file).unwrap();

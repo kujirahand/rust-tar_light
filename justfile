@@ -29,5 +29,5 @@ clean:
 
 test:
     cargo test
-    just pack src.tar.gz src
-    just detail src.tar.gz
+    just pack testdata.tar.gz testdata
+    just detail testdata.tar.gz
