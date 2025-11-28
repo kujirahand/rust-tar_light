@@ -8,7 +8,7 @@
 //! use tar_light::tar::{read_tar, TarEntry};
 //!
 //! // Read TAR archive from file
-//! let tar_data = std::fs::read("archive.tar").unwrap();
+//! let tar_data = std::fs::read("testdata/simple.tar").unwrap();
 //! let entries = read_tar(&tar_data);
 //!
 //! // Process entries
@@ -61,7 +61,7 @@
 //! let is_valid = header.verify_checksum(&bytes);
 //! ```
  
-// Tar header representation
+// Tar header struct
 #[derive(Debug)]
 pub struct TarHeader {
     pub name: String,
@@ -138,28 +138,92 @@ impl TarHeader {
     /// Verify the checksum of the header
     /// Returns true if the checksum is valid
     pub fn verify_checksum(&self, data: &[u8]) -> bool {
-        if data.len() < 512 {
-            return false;
-        }
-        let mut sum: u32 = 0;
-        for (i, &b) in data.iter().take(512).enumerate() {
-            if (148..156).contains(&i) {
-                sum += b' ' as u32;
-            } else {
-                sum += b as u32;
-            }
-        }
-        println!("Calculated checksum: {}, Header checksum: {}", sum, self.checksum);
+        let sum = calc_checksum(data);
         sum == self.checksum
     }
 }
 
-/// Tar entry representation
+/// Tar entry struct
 #[derive(Debug)]
 pub struct TarEntry {
     pub header: TarHeader,
     pub data: Vec<u8>,
     pub header_bytes: [u8; 512],
+}
+
+// Tar struct
+#[derive(Debug)]
+pub struct Tar {
+    pub entries: Vec<TarEntry>,
+    pub use_header_parsing: bool, // if true, update TarEntry.header_bytes on modification
+}
+impl Tar {
+    /// Create a new empty Tar archive
+    pub fn new() -> Self {
+        Self {
+            entries: Vec::new(),
+            use_header_parsing: false,
+        }
+    }
+    /// Create a Tar archive from bytes
+    pub fn from_bytes(data: &[u8]) -> Self {
+        let entries = read_tar(data);
+        Self {
+            entries,
+            use_header_parsing: false,
+        }
+    }
+    /// Add an entry to the Tar archive
+    pub fn add_entry(&mut self, entry: TarEntry) {
+        self.entries.push(entry);
+    }
+    /// Add string data to the Tar archive
+    pub fn add_str_entry(&mut self, name: &str, content: &str) {
+        let data = content.as_bytes().to_vec();
+        let mut header = TarHeader::new(name.to_string(), 0o664, data.len() as u64);
+        header.typeflag = b'0'; // 通常ファイルとして明示
+        let mut header_bytes = [0u8; 512];
+        if self.use_header_parsing {
+            header_bytes = header.to_bytes();
+        }
+        let entry = TarEntry {
+            header,
+            data,
+            header_bytes,
+        };
+        self.entries.push(entry);
+    }
+    /// Find entry by name
+    pub fn find_entry(&self, name: &str) -> Option<&TarEntry> {
+        self.entries.iter().find(|e| e.header.name == name)
+    }
+    /// set string like key-value store
+    pub fn set_str(&mut self, name: &str, content: &str) {
+        if let Some(entry) = self.entries.iter_mut().find(|e| e.header.name == name) {
+            entry.data = content.as_bytes().to_vec();
+            entry.header.size = entry.data.len() as u64;
+            if self.use_header_parsing {
+                entry.header_bytes = entry.header.to_bytes();
+            }
+        } else {
+            self.add_str_entry(name, content);
+        }
+    }
+    /// get string like key-value store
+    pub fn get_str(&self, name: &str) -> Option<String> {
+        if let Some(entry) = self.entries.iter().find(|e| e.header.name == name) {
+            let data = String::from_utf8_lossy(&entry.data)
+                .trim_end_matches('\0')
+                .to_string();
+            Some(data)
+        } else {
+            None
+        }
+    }
+    /// Convert the Tar archive to bytes
+    pub fn to_bytes(&self) -> Vec<u8> {
+        write_tar(&self.entries)
+    }
 }
 
 /// Reads a tar archive from a byte slice and returns a vector of TarEntry
@@ -275,7 +339,9 @@ pub fn write_tar(entries: &[TarEntry]) -> Vec<u8> {
     let mut tar_data = Vec::new();
     for entry in entries {
         // Use header_bytes if available, otherwise create from header
-        tar_data.extend_from_slice(&entry.header_bytes);
+        let header_bytes = create_tar_header(&entry.header);
+        tar_data.extend_from_slice(&header_bytes);
+        // Write data and padding to 512-byte boundary
         tar_data.extend_from_slice(&entry.data);
         let padding = (512 - (entry.data.len() % 512)) % 512;
         tar_data.extend_from_slice(&vec![0u8; padding]);
@@ -353,16 +419,20 @@ fn create_tar_header(header: &TarHeader) -> [u8; 512] {
     data[345..345 + prefix_len].copy_from_slice(&prefix_bytes[..prefix_len]);
     
     // calc checksum
-    let checksum = calc_tar_checksum(&data);
+    let checksum = calc_checksum(&data);
     let checksum_str = format!("{:06o}\0 ", checksum);
     let checksum_bytes = checksum_str.as_bytes();
     data[148..148 + checksum_bytes.len()].copy_from_slice(checksum_bytes);
     data
 }
 
-fn calc_tar_checksum(header: &[u8; 512]) -> u32 {
+/// Calc checksum of the header bytes
+pub fn calc_checksum(data: &[u8]) -> u32 {
+    if data.len() < 512 {
+        return 0;
+    }
     let mut sum: u32 = 0;
-    for (i, &b) in header.iter().enumerate() {
+    for (i, &b) in data.iter().take(512).enumerate() {
         if (148..156).contains(&i) {
             sum += b' ' as u32;
         } else {
@@ -371,6 +441,7 @@ fn calc_tar_checksum(header: &[u8; 512]) -> u32 {
     }
     sum
 }
+
 
 #[cfg(test)]
 mod tests {
@@ -383,6 +454,50 @@ mod tests {
         let test_entry = entries.iter().find(|e| e.header.name == "test.txt").unwrap();
         let calculated_checksum = test_entry.header.verify_checksum(&test_entry.header_bytes);
         assert!(calculated_checksum, "Checksum verification failed");
+    }
+
+    #[test]
+    fn tar_methods_test() {
+        // Tar::new で空のTarを作成
+        let mut tar = Tar::new();
+        assert_eq!(tar.entries.len(), 0);
+
+        // add_str_entry でエントリ追加
+        tar.add_str_entry("foo.txt", "hello");
+        assert_eq!(tar.entries.len(), 1);
+        assert_eq!(tar.entries[0].header.name, "foo.txt");
+        assert_eq!(String::from_utf8_lossy(&tar.entries[0].data), "hello");
+
+        // set_str で同名エントリを上書き
+        tar.set_str("foo.txt", "world");
+        assert_eq!(tar.entries.len(), 1); // 上書きなので1件のまま
+        assert_eq!(tar.get_str("foo.txt").as_deref(), Some("world"));
+
+        // add_entry でTarEntryを追加
+        let header = TarHeader::new("bar.txt".to_string(), 0o644, 3);
+        let data = b"abc".to_vec();
+        let header_bytes = header.to_bytes();
+        let entry = TarEntry { header, data: data.clone(), header_bytes };
+        tar.add_entry(entry);
+        assert_eq!(tar.entries.len(), 2);
+        assert_eq!(tar.get_str("bar.txt").as_deref(), Some("abc"));
+
+        // find_entry で検索
+        let found = tar.find_entry("foo.txt");
+        assert!(found.is_some());
+        assert_eq!(String::from_utf8_lossy(&found.unwrap().data), "world");
+
+        // to_bytes でバイト列化し from_bytes で復元
+        let mut tar1  = Tar::new();
+        tar1.add_str_entry("foo.txt", "foo");
+        tar1.add_str_entry("bar.txt", "bar");
+        let bytes = tar1.to_bytes();
+        println!("Bytes length: {}", bytes.len());
+        let tar2 = Tar::from_bytes(&bytes);
+        println!("Tar2: {:?}", tar2.entries);
+        assert_eq!(tar2.entries.len(), 2);
+        assert_eq!(tar2.get_str("foo.txt").as_deref(), Some("foo"));
+        assert_eq!(tar2.get_str("bar.txt").as_deref(), Some("bar"));
     }
 
     #[test]
@@ -625,31 +740,15 @@ mod tests {
     #[test]
     fn security_test_invalid_checksum() {
         // Test with deliberately invalid checksum
-        let header = TarHeader::new("test.txt".to_string(), 0o644, 10);
-        let mut header_bytes = header.to_bytes();
-        
-        // Manually corrupt the checksum field in the header bytes
-        // Checksum is at bytes 148-155
-        header_bytes[148] = b'9';
-        header_bytes[149] = b'9';
-        header_bytes[150] = b'9';
-        header_bytes[151] = b'9';
-        header_bytes[152] = b'9';
-        header_bytes[153] = b'9';
-        header_bytes[154] = 0;
-        header_bytes[155] = b' ';
-        
-        let data = b"test data!".to_vec();
-        let entry = TarEntry { header, data: data.clone(), header_bytes };
-        let tar_data = write_tar(&[entry]);
-        
-        // read_tar should still parse it (checksum verification is optional)
-        let read_entries = read_tar(&tar_data);
-        assert_eq!(read_entries.len(), 1);
-        assert_eq!(read_entries[0].data, data);
-        
+        let mut tar = Tar::new();
+        tar.use_header_parsing = true;
+        tar.add_str_entry("test.txt", "test data!");
+        let mut tar_data = tar.to_bytes();
+        tar_data[148] = b'9'; // Corrupt checksum
+        tar_data[149] = b'9'; // Corrupt checksum
+        let tar2 = Tar::from_bytes(&tar_data);
         // Explicit checksum verification should fail
-        assert!(!read_entries[0].header.verify_checksum(&read_entries[0].header_bytes));
+        assert!(!tar2.entries[0].header.verify_checksum(&tar2.entries[0].header_bytes));
     }
 
     #[test]

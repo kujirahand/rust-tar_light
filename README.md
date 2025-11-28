@@ -59,26 +59,28 @@ match list("archive.tar.gz") {
 ### Advanced usage with low-level API
 
 ```rust
-use tar_light::{read_tar, write_tar, TarEntry, TarHeader};
+use tar_light::{read_tar, write_tar, Tar, TarEntry, TarHeader};
 use std::fs;
 
-// Reading TAR archives
-let tar_data = fs::read("archive.tar").unwrap();
-let entries = read_tar(&tar_data);
-// list entries
-for entry in entries {
+// Read tar archives
+let bin_bytes = fs::read("testdata/simple.tar").unwrap();
+let entries = read_tar(&bin_bytes);
+
+// List entries
+for entry in &entries {
     println!("{}: {} bytes", entry.header.name, entry.header.size);
 }
 
-// Creating TAR archives
-let mut entries = Vec::new();
-let header = TarHeader::new("hello.txt".to_string(), 0o644, 12);
-let data = b"Hello, World".to_vec();
-let header_bytes = header.to_bytes();
+// Write entries
+let tar_bytes = write_tar(&entries);
+fs::write("archive.tar", tar_bytes).unwrap();
 
-entries.push(TarEntry { header, data, header_bytes });
-let tar_data = write_tar(&entries);
-fs::write("new_archive.tar", tar_data).unwrap();
+// Create tar archive from scratch
+let mut tar = Tar::new();
+tar.add_str_entry("file1.txt", "Hello, World!");
+tar.add_str_entry("file2.txt", "This is a test.");
+let tar_bytes = tar.to_bytes();
+fs::write("archive.tar", tar_bytes).unwrap();
 ```
 
 ## Supported Formats
