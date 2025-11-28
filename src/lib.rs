@@ -7,7 +7,7 @@
 //! ```rust
 //! use tar_light::pack;
 //!
-//! let files = vec!["file1.txt", "file2.txt"];
+//! let files = vec!["testdata/file1.txt", "testdata/file2.txt"];
 //! 
 //! pack("archive.tar", &files);
 //! // Creates archive.tar containing file1.txt and file2.txt
@@ -65,7 +65,7 @@
 //! use std::fs;
 //!
 //! // Reading TAR archives
-//! let tar_data = fs::read("archive.tar").unwrap();
+//! let tar_data = fs::read("testdata/simple.tar").unwrap();
 //! let entries = read_tar(&tar_data);
 //!
 //! for entry in entries {
@@ -80,7 +80,7 @@
 //!
 //! entries.push(TarEntry { header, data, header_bytes });
 //! let tar_data = write_tar(&entries);
-//! fs::write("new_archive.tar", tar_data).unwrap();
+//! fs::write("output_directory/archive.tar", tar_data).unwrap();
 //! ```
 
 pub mod tar;
