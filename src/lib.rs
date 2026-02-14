@@ -88,6 +88,7 @@
 pub mod tar;
 
 use std::fs;
+#[cfg(unix)]
 use std::os::unix::fs::MetadataExt;
 use std::path::Path;
 use std::io::{Write, Read};
@@ -145,12 +146,14 @@ fn get_groupname_from_gid(gid: u32) -> Option<String> {
 
 #[cfg(not(unix))]
 /// Stub for non-Unix platforms
+#[allow(dead_code)]
 fn get_username_from_uid(_uid: u32) -> Option<String> {
     None
 }
 
 #[cfg(not(unix))]
 /// Stub for non-Unix platforms
+#[allow(dead_code)]
 fn get_groupname_from_gid(_gid: u32) -> Option<String> {
     None
 }
@@ -202,30 +205,34 @@ fn add_file_to_entries(file_path: &Path, base_path: &Path, entries: &mut Vec<Tar
     };
     
     // Calculate relative path from base_path
+    // TAR format requires forward slashes, so normalize for Windows
     let relative_path = file_path.strip_prefix(base_path)
         .unwrap_or(file_path)
         .to_string_lossy()
-        .to_string();
+        .replace('\\', "/");
 
     let mut header = TarHeader::new(
         relative_path,
         0o644,
-        data.len() as u64       
+        data.len() as u64
     );
     // get file metadata
     match fs::metadata(file_path) {
         Ok(m) => {
-            header.mode = m.mode() as u32;
             header.mtime = m.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH)
                 .duration_since(std::time::SystemTime::UNIX_EPOCH).unwrap_or_default().as_secs();
-            header.gid = m.gid();
-            header.uid = m.uid();
-            // Set uname and gname from uid/gid
-            if let Some(uname) = get_username_from_uid(m.uid()) {
-                header.uname = uname;
-            }
-            if let Some(gname) = get_groupname_from_gid(m.gid()) {
-                header.gname = gname;
+            #[cfg(unix)]
+            {
+                header.mode = m.mode() as u32;
+                header.gid = m.gid();
+                header.uid = m.uid();
+                // Set uname and gname from uid/gid
+                if let Some(uname) = get_username_from_uid(m.uid()) {
+                    header.uname = uname;
+                }
+                if let Some(gname) = get_groupname_from_gid(m.gid()) {
+                    header.gname = gname;
+                }
             }
         },
         Err(e) => {
@@ -800,24 +807,29 @@ mod tests {
         let output_dir = "test_security_abs_output";
         
         // Create tar with absolute path (should be rejected or sanitized)
-        let header = TarHeader::new("/tmp/absolute_file.txt".to_string(), 0o644, 8);
+        let abs_path = if cfg!(windows) {
+            "C:/Temp/absolute_file.txt".to_string()
+        } else {
+            "/tmp/absolute_file.txt".to_string()
+        };
+        let header = TarHeader::new(abs_path.clone(), 0o644, 8);
         let data = b"absolute".to_vec();
         let header_bytes = header.to_bytes();
         let entry = TarEntry { header, data, header_bytes };
-        
+
         let tar_data = write_tar(&[entry]);
         fs::write(test_tar, tar_data).unwrap();
-        
-        // This may write to /tmp/absolute_file.txt (VULNERABILITY)
+
+        // This may write to the absolute path (VULNERABILITY)
         unpack_with_options(test_tar, output_dir, false, false);
-        
+
         // Cleanup
         fs::remove_file(test_tar).unwrap();
         if Path::new(output_dir).exists() {
             fs::remove_dir_all(output_dir).ok();
         }
         // Cleanup absolute path file if created
-        fs::remove_file("/tmp/absolute_file.txt").ok();
+        fs::remove_file(&abs_path).ok();
     }
 
     #[test]
